@@ -1,0 +1,3879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Portuguese Preposition Play — Couples Game</title>
+  <meta name="color-scheme" content="dark light"/>
+
+  <!-- Tailwind (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React 18 + ReactDOM + Babel (single-file JSX) -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    html, body { height: 100%; }
+    body { background: #0b1220; color: #e5e7eb; }
+    .chip { padding:.15rem .5rem; border-radius:9999px; background:#0f172a; border:1px solid #1f2937; white-space:nowrap; font-size:.78rem; }
+    .card { border-radius:1rem; background:linear-gradient(180deg,#0f172a 0%,#0c1222 100%); border:1px solid #1f2937; box-shadow:0 10px 24px rgba(0,0,0,.28); }
+    .modal { position:fixed; inset:0; display:grid; place-items:center; background:rgba(0,0,0,.6); z-index:60; }
+    .modal-opaque { position:fixed; inset:0; display:grid; place-items:center; background:#000; z-index:70; }
+    .btn { border-radius:.85rem; padding:.5rem .8rem; border:1px solid #334155; background:#0b1220; font-size:.95rem; transition:transform .06s ease, box-shadow .2s ease, background .2s ease; }
+    .btn:hover { background:#101a2f; }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { background:#0369a1; border-color:#0284c7; }
+    .btn-primary:hover { background:#0284c7; }
+    .btn-danger { background:#9f1239; border-color:#be123c; }
+    .btn-danger:hover { background:#be123c; }
+    .btn-success { background:#15803d; border-color:#16a34a; }
+    .btn-success:hover { background:#16a34a; }
+    .k { font-size:.9rem; opacity:.9; }
+
+    .flash { box-shadow:0 0 0 3px rgba(56,189,248,.35); }
+    .play-input { background:#0f172a; border:1px solid #1f2937; border-radius:.75rem; padding:.5rem .6rem; }
+
+    @media (max-width: 420px) {
+      .play-card .title { font-size:1.05rem; }
+      .play-card .btn { padding:.45rem .7rem; font-size:.9rem; }
+      .card { padding: .75rem !important; }
+    }
+
+    .dd-panel {
+      position: absolute; z-index: 40; inset-inline-start: 0; top: 110%;
+      width: min(92vw, 420px);
+      background:#0b1220; border:1px solid #1f2937; border-radius: .75rem;
+      box-shadow: 0 12px 28px rgba(0,0,0,.45);
+      max-height: 55vh; overflow:auto; padding:.5rem;
+    }
+
+    .help {
+      display:inline-flex; align-items:center; justify-content:center;
+      width:1.05rem; height:1.05rem; border-radius:9999px;
+      background:#1f2937; border:1px solid #334155; font-size:.75rem; margin-left:.35rem;
+    }
+
+    .timer-overlay { position:fixed; inset:0; background:rgba(0,0,0,.75); display:grid; place-items:center; z-index:80; }
+    .timer-circle { width:min(70vw,420px); height:min(70vw,420px); border-radius:9999px; border:10px solid rgba(148,163,184,.35); display:grid; place-items:center; }
+    .timer-digits { font-size:min(16vw,96px); line-height:1; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="env,react">
+(() => {
+  const { useState, useMemo, useRef, useEffect, useImperativeHandle, forwardRef } = React;
+
+  // ---------- Utils ----------
+  const clone = (obj) => JSON.parse(JSON.stringify(obj));
+  const rand  = (arr) => arr[Math.floor(Math.random()*arr.length)];
+  const sum   = (arr) => arr.reduce((a,b)=>a+b,0);
+  const shuffle = (arr) => {
+    const a = arr.slice();
+    for (let i=a.length-1;i>0;i--) { const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]] = [a[j],a[i]]; }
+    return a;
+  };
+  const SAVE_KEY = "ppp_couples_autosave_v8"; 
+
+  function makeThrottle(fn, ms=200) {
+    let t=null, lastArgs=null;
+    return (...args) => {
+      lastArgs = args;
+      if (t) return;
+      t = setTimeout(()=>{ t=null; fn(...lastArgs); }, ms);
+    };
+  }
+
+  // ---------- Persons (PT-PT) ----------
+  const PERSONS = [
+    { key: "eu",    label: "eu",    idx: 0, pronoun:"his"  },
+    { key: "tu",    label: "tu",    idx: 1, pronoun:"his"  },
+    { key: "ele",   label: "ele",   idx: 2, pronoun:"his"  },
+    { key: "ela",   label: "ela",   idx: 2, pronoun:"her"  },
+    { key: "nós",   label: "nós",   idx: 3, pronoun:"their"},
+    { key: "vocês", label: "vocês", idx: 4, pronoun:"their"},
+    { key: "eles",  label: "eles",  idx: 4, pronoun:"their"},
+    { key: "elas",  label: "elas",  idx: 4, pronoun:"their"},
+  ];
+
+  // ---------- First verbs ----------
+  const VERBS_L1 = [
+    { key:"gostar",    prep:"de", conj:["gosto","gostas","gosta","gostamos","gostam"], en:"to like",               tr:"sevmek" },
+    { key:"precisar",  prep:"de", conj:["preciso","precisas","precisa","precisamos","precisam"], en:"to need",      tr:"ihtiyaç duymak" },
+    { key:"deixar",    prep:"de", conj:["deixo","deixas","deixa","deixamos","deixam"], en:"to stop (doing)",        tr:"bırakmak" },
+    { key:"acabar",    prep:"de", conj:["acabo","acabas","acaba","acabamos","acabam"], en:"to have just (done)",    tr:"az önce (yapmak)" },
+    { key:"pensar",    prep:"em", conj:["penso","pensas","pensa","pensamos","pensam"], en:"to think (about)",      tr:"(hakkında) düşünmek" },
+    { key:"começar",   prep:"a",  conj:["começo","começas","começa","começamos","começam"], en:"to start",         tr:"başlamak" },
+    { key:"aprender",  prep:"a",  conj:["aprendo","aprendes","aprende","aprendemos","aprendem"], en:"to learn",    tr:"öğrenmek" },
+    { key:"ajudar",    prep:"a",  conj:["ajudo","ajudas","ajuda","ajudamos","ajudam"], en:"to help",               tr:"yardım etmek" },
+    { key:"continuar", prep:"a",  conj:["continuo","continuas","continua","continuamos","continuam"], en:"to continue", tr:"devam etmek" },
+    { key:"ter",       prep:"de", conj:["tenho","tens","tem","temos","têm"], en:"to have to",                      tr:"-mek zorunda olmak" },
+    { key:"querer",    prep:"",   conj:["quero","queres","quer","queremos","querem"], en:"to want",               tr:"istemek" },
+    { key:"tentar",    prep:"",   conj:["tento","tentas","tenta","tentamos","tentam"], en:"to try",                tr:"denemek" },
+    { key:"decidir",   prep:"",   conj:["decido","decides","decide","decidimos","decidem"], en:"to decide",        tr:"karar vermek" },
+    { key:"prometer",  prep:"",   conj:["prometo","prometes","promete","prometemos","prometem"], en:"to promise",  tr:"söz vermek" },
+    { key:"preferir",  prep:"",   conj:["prefiro","preferes","prefere","preferimos","preferem"], en:"to prefer",   tr:"tercih etmek" },
+    { key:"conseguir", prep:"",   conj:["consigo","consegues","consegue","conseguimos","conseguem"], en:"to manage / be able to", tr:"başarmak / yapabilmek" },
+    { key:"saber",     prep:"",   conj:["sei","sabes","sabe","sabemos","sabem"], en:"to know how to",              tr:"-meyi bilmek" },
+    { key:"poder",     prep:"",   conj:["posso","podes","pode","podemos","podem"], en:"can / to be able to",       tr:"-ebilmek" },
+  ];
+  const VERBS_L2 = [
+    { key:"parar",     prep:"de", conj:["paro","paras","para","paramos","param"],           en:"to stop",                tr:"durmak / yapmayı bırakmak" },
+    { key:"voltar",    prep:"a",  conj:["volto","voltas","volta","voltamos","voltam"],      en:"to do again",            tr:"tekrar (yapmak)" },
+    { key:"ir",        prep:"",   conj:["vou","vais","vai","vamos","vão"],                  en:"to go / going to",       tr:"gitmek / -ecek (niyet)" },
+    { key:"estar",     prep:"a",  conj:["estou","estás","está","estamos","estão"],          en:"to be (doing)",          tr:"yapıyor olmak" },
+    { key:"dever",     prep:"",   conj:["devo","deves","deve","devemos","devem"],           en:"should / must",          tr:"-meli/-malı olmak" },
+    { key:"esperar",   prep:"",   conj:["espero","esperas","espera","esperamos","esperam"], en:"to hope / expect",       tr:"ummak / beklemek" },
+    { key:"evitar",    prep:"",   conj:["evito","evitas","evita","evitamos","evitam"],      en:"to avoid",               tr:"kaçınmak" },
+    { key:"planear",   prep:"",   conj:["planeio","planeias","planeia","planeamos","planeiam"], en:"to plan",          tr:"planlamak" },
+    { key:"procurar",  prep:"",   conj:["procuro","procuras","procura","procuramos","procuram"], en:"to try/seek to",   tr:"yapmaya çalışmak" },
+    { key:"costumar",  prep:"",   conj:["costumo","costumas","costuma","costumamos","costumam"], en:"to usually do",   tr:"genelde yapmak" },
+    { key:"ensinar",   prep:"a",  conj:["ensino","ensinas","ensina","ensinamos","ensinam"], en:"to teach (to)",          tr:"öğretmek" },
+    { key:"convidar",  prep:"a",  conj:["convido","convidas","convida","convidamos","convidam"], en:"to invite (to)",  tr:"davet etmek" },
+    { key:"experimentar", prep:"",conj:["experimento","experimentas","experimenta","experimentamos","experimentam"], en:"to try out", tr:"denemek" },
+  ];
+
+  // ---------- Second verbs ----------
+  const SECOND_L1 = [
+    { pt:"estudar",         en:"to study",             tr:"ders çalışmak" },
+    { pt:"jogar",           en:"to play",              tr:"oynamak" },
+    { pt:"trabalhar",       en:"to work",              tr:"çalışmak" },
+    { pt:"correr",          en:"to run",               tr:"koşmak" },
+    { pt:"nadar",           en:"to swim",              tr:"yüzmek" },
+    { pt:"cozinhar",        en:"to cook",              tr:"yemek yapmak" },
+    { pt:"ler",             en:"to read",              tr:"okumak" },
+    { pt:"escrever",        en:"to write",             tr:"yazmak" },
+    { pt:"dormir",          en:"to sleep",             tr:"uyumak" },
+    { pt:"viajar",          en:"to travel",            tr:"seyahat etmek" },
+    { pt:"comprar",         en:"to buy",               tr:"satın almak" },
+    { pt:"vender",          en:"to sell",              tr:"satmak" },
+    { pt:"falar português", en:"to speak Portuguese",  tr:"Portekizce konuşmak" },
+    { pt:"ouvir música",    en:"to listen to music",   tr:"müzik dinlemek" },
+    { pt:"ver filmes",      en:"to watch movies",      tr:"film izlemek" },
+    { pt:"visitar museus",  en:"to visit museums",     tr:"müze gezmek" },
+    { pt:"arrumar a casa",  en:"to tidy up the house", tr:"evi toparlamak" },
+    { pt:"limpar",          en:"to clean",             tr:"temizlemek" },
+    { pt:"descansar",       en:"to rest",              tr:"dinlenmek" },
+    { pt:"dançar",          en:"to dance",             tr:"dans etmek" },
+    { pt:"cantar",          en:"to sing",              tr:"şarkı söylemek" },
+    { pt:"desenhar",        en:"to draw",              tr:"çizmek" },
+    { pt:"pintar",          en:"to paint",             tr:"boyamak" },
+    { pt:"praticar",        en:"to practise",          tr:"pratik yapmak" },
+    { pt:"treinar",         en:"to train",             tr:"antrenman yapmak" },
+    { pt:"fazer exercício", en:"to exercise",          tr:"egzersiz yapmak" },
+    { pt:"meditar",         en:"to meditate",          tr:"meditasyon yapmak" },
+  ];
+  const SECOND_L2 = [
+    { pt:"beber água",         en:"to drink water",         tr:"su içmek" },
+    { pt:"comer",              en:"to eat",                 tr:"yemek yemek" },
+    { pt:"passear",            en:"to stroll",              tr:"dolaşmak" },
+    { pt:"brincar",            en:"to play (kids/pets)",    tr:"oynamak" },
+    { pt:"subir",              en:"to go up",               tr:"çıkmak" },
+    { pt:"descer",             en:"to go down",             tr:"inmek" },
+    { pt:"visitar amigos",     en:"to visit friends",       tr:"arkadaşları ziyaret etmek" },
+    { pt:"telefonar",          en:"to phone/call",          tr:"telefon etmek" },
+    { pt:"estudar gramática",  en:"to study grammar",       tr:"gramer çalışmak" },
+    { pt:"passear no parque",  en:"to walk in the park",    tr:"parkta dolaşmak" },
+    { pt:"tomar café",         en:"to have coffee",         tr:"kahve içmek" },
+    { pt:"tomar banho",        en:"to shower/bathe",        tr:"duş almak" },
+    { pt:"arranjar trabalho",  en:"to get a job",           tr:"iş bulmak" },
+    { pt:"cozinhar sopa",      en:"to cook soup",           tr:"çorba pişirmek" },
+    { pt:"jogar cartas",       en:"to play cards",          tr:"iskambil oynamak" },
+    { pt:"ouvir podcast",      en:"to listen to a podcast", tr:"podcast dinlemek" },
+    { pt:"passear o cão",      en:"to walk the dog",        tr:"köpeği gezdirmek" },
+    { pt:"fazer compras",      en:"to go shopping",         tr:"alışveriş yapmak" },
+  ];
+
+
+  // ==== CHAPTER 04: TRAINING DATASETS BEGIN ====
+  
+  // 1) Demonstrativos SIMPLES (Spatial focus: Este vs Esse vs Aquele)
+  // Logic: 9 options grid. Context given in parentheses (location).
+  const FAMILY_DATA = [
+    // NEAR ME (Speaker) - ESTE / ESTA / ISTO
+    {
+      id:"ds1", blanks:1,
+      prompt:"(Aqui na minha mão) Vou ler ___ livro.",
+      a1:["este","esta","isto","esse","essa","isso","aquele","aquela","aquilo"], c1:"este",
+      answer:"Vou ler este livro.",
+      en:"(In my hand) I'm going to read this book.",
+      tr:"(Elimde) Bu kitabı okuyacağım."
+    },
+    {
+      id:"ds2", blanks:1,
+      prompt:"(Aqui comigo) ___ chaves são minhas.",
+      a1:["Estas","Estes","Isto","Essas","Esses","Isso","Aquelas","Aqueles","Aquilo"], c1:"Estas",
+      answer:"Estas chaves são minhas.",
+      en:"(Here with me) These keys are mine.",
+      tr:"(Yanımda) Bu anahtarlar benim."
+    },
+    {
+      id:"ds3", blanks:1,
+      prompt:"(No meu prato) ___ sopa está fria.",
+      a1:["Esta","Este","Isto","Essa","Esse","Isso","Aquela","Aquele","Aquilo"], c1:"Esta",
+      answer:"Esta sopa está fria.",
+      en:"(In my plate) This soup is cold.",
+      tr:"(Tabağımda) Bu çorba soğuk."
+    },
+    {
+      id:"ds3b", blanks:1,
+      prompt:"(Aqui nos meus pés) ___ sapatos são novos.",
+      a1:["Estes","Estas","Isto","Esses","Essas","Isso","Aqueles","Aquelas","Aquilo"], c1:"Estes",
+      answer:"Estes sapatos são novos.",
+      en:"(On my feet here) These shoes are new.",
+      tr:"(Ayağımda) Bu ayakkabılar yeni."
+    },
+
+    // NEAR YOU (Listener) - ESSE / ESSA / ISSO
+    {
+      id:"ds4", blanks:1,
+      prompt:"(Aí na tua mão) Onde compraste ___ casaco?",
+      a1:["esse","essa","isso","este","esta","isto","aquele","aquela","aquilo"], c1:"esse",
+      answer:"Onde compraste esse casaco?",
+      en:"(In your hand/body) Where did you buy that coat?",
+      tr:"(Senin elinde/üstünde) O ceketi nereden aldın?"
+    },
+    {
+      id:"ds5", blanks:1,
+      prompt:"(Perto de ti) Passa-me ___ copo, por favor.",
+      a1:["esse","essa","isso","este","esta","isto","aquele","aquela","aquilo"], c1:"esse",
+      answer:"Passa-me esse copo, por favor.",
+      en:"(Near you) Pass me that glass, please.",
+      tr:"(Senin yanında) O bardağı uzat lütfen."
+    },
+    {
+      id:"ds6", blanks:1,
+      prompt:"(O que tu dizes) Por que dizes ___?",
+      a1:["isso","isto","aquilo","esse","essa","este","esta","aquele","aquela"], c1:"isso",
+      answer:"Por que dizes isso?",
+      en:"(What you are saying) Why do you say that?",
+      tr:"(Senin dediğin) Neden öyle/onu diyorsun?"
+    },
+    {
+      id:"ds6b", blanks:1,
+      prompt:"(Aí na tua mesa) ___ caneta funciona?",
+      a1:["Essa","Esse","Isso","Esta","Este","Isto","Aquela","Aquele","Aquilo"], c1:"Essa",
+      answer:"Essa caneta funciona?",
+      en:"(On your table there) Does that pen work?",
+      tr:"(Senin masanda) O kalem çalışıyor mu?"
+    },
+
+    // FAR (Away) - AQUELE / AQUELA / AQUILO
+    {
+      id:"ds7", blanks:1,
+      prompt:"(Na outra rua) ___ casa é muito antiga.",
+      a1:["Aquela","Aquele","Aquilo","Essa","Esse","Isso","Esta","Este","Isto"], c1:"Aquela",
+      answer:"Aquela casa é muito antiga.",
+      en:"(In the other street) That house over there is very old.",
+      tr:"(Diğer sokakta) Şuradaki ev çok eski."
+    },
+    {
+      id:"ds8", blanks:1,
+      prompt:"(Lá no céu) Olha para ___ avião!",
+      a1:["aquele","aquela","aquilo","esse","essa","isso","este","esta","isto"], c1:"aquele",
+      answer:"Olha para aquele avião!",
+      en:"(Up in the sky) Look at that plane!",
+      tr:"(Gökyüzünde) Şu uçağa bak!"
+    },
+    {
+      id:"ds9", blanks:1,
+      prompt:"(No passado / longe) Em 1990? ___ foi um ano difícil.",
+      a1:["Aquele","Aquela","Aquilo","Esse","Essa","Isso","Este","Esta","Isto"], c1:"Aquele",
+      answer:"Aquele foi um ano difícil.",
+      en:"(Distant past) In 1990? That was a difficult year.",
+      tr:"(Uzak geçmiş) 1990 mı? O zor bir yıldı."
+    },
+  ];
+
+  // 2) Family tree — родственники
+  const FAMILY_TREE_DATA = [
+    {
+      id:"ft1",
+      blanks:1,
+      prompt:"O pai do meu pai é o meu ____. ",
+      a1:["avô","tio","irmão","primo"],
+      c1:"avô",
+      answer:"O pai do meu pai é o meu avô.",
+      en:"My father's father is my grandfather.",
+      tr:"Babamın babası benim büyükbabam."
+    },
+    {
+      id:"ft2",
+      blanks:1,
+      prompt:"A irmã da minha mãe é a minha ____. ",
+      a1:["tia","prima","avó","irmã"],
+      c1:"tia",
+      answer:"A irmã da minha mãe é a minha tia.",
+      en:"My mother's sister is my aunt.",
+      tr:"Annemin kız kardeşi benim teyzem."
+    },
+    {
+      id:"ft3",
+      blanks:1,
+      prompt:"O filho do meu tio é o meu ____. ",
+      a1:["primo","sobrinho","irmão","avô"],
+      c1:"primo",
+      answer:"O filho do meu tio é o meu primo.",
+      en:"My uncle's son is my cousin.",
+      tr:"Amcamın oğlu benim kuzenim."
+    },
+    {
+      id:"ft4",
+      blanks:1,
+      prompt:"A filha do meu irmão é a minha ____. ",
+      a1:["sobrinha","prima","irmã","neta"],
+      c1:"sobrinha",
+      answer:"A filha do meu irmão é a minha sobrinha.",
+      en:"My brother's daughter is my niece.",
+      tr:"Kardeşimin kızı benim yeğenim."
+    },
+    {
+      id:"ft5",
+      blanks:2,
+      prompt:"O ____ da minha filha é o meu ____.",
+      a1:["marido","filho","pai","tio"],
+      c1:"marido",
+      a2:["genro","avô","primo","sobrinho"],
+      c2:"genro",
+      answer:"O marido da minha filha é o meu genro.",
+      en:"My daughter's husband is my son-in-law.",
+      tr:"Kızımın kocası benim damadım."
+    },
+    {
+      id:"ft6",
+      blanks:2,
+      prompt:"A ____ do meu filho é a minha ____.",
+      a1:["esposa","tia","irmã"],
+      c1:"esposa",
+      a2:["nora","avó","prima"],
+      c2:"nora",
+      answer:"A esposa do meu filho é a minha nora.",
+      en:"My son's wife is my daughter-in-law.",
+      tr:"Oğlumun eşi benim gelinim."
+    },
+    {
+      id:"ft7",
+      blanks:1,
+      prompt:"Os pais da minha mãe são os meus ____. ",
+      a1:["avós","tios","irmãos","primos"],
+      c1:"avós",
+      answer:"Os pais da minha mãe são os meus avós.",
+      en:"My mother's parents are my grandparents.",
+      tr:"Annemin anne babası benim büyükbabam ve büyükannem."
+    },
+  ];
+
+  // 3) Basic questions
+  const QUESTIONS_DATA = [
+    {
+      id:"q1",
+      blanks:2,
+      prompt:"___ anos ___ ele?",
+      a1:["Quantos","Quanto","Que","Como"],
+      c1:"Quantos",
+      a2:["tem","tens","é","está"],
+      c2:"tem",
+      answer:"Quantos anos tem ele?",
+      en:"How old is he?",
+      tr:"O kaç yaşında?"
+    },
+    {
+      id:"q2",
+      blanks:1,
+      prompt:"___ te chamas?",
+      a1:["Como","Que","Qual","Quem"],
+      c1:"Como",
+      answer:"Como te chamas?",
+      en:"What is your name?",
+      tr:"Adın ne?"
+    },
+    {
+      id:"q3",
+      blanks:1,
+      prompt:"___ é o teu nome?",
+      a1:["Qual","Onde","Quando","Quanto"],
+      c1:"Qual",
+      answer:"Qual é o teu nome?",
+      en:"What is your name?",
+      tr:"Adın ne?"
+    },
+    {
+      id:"q4",
+      blanks:2,
+      prompt:"___ ___ você?",
+      a1:["De onde","Onde","Para onde","Quando"],
+      c1:"De onde",
+      a2:["é","és","são","está"],
+      c2:"é",
+      answer:"De onde é você?",
+      en:"Where are you from?",
+      tr:"Nerelisiniz?"
+    },
+    {
+      id:"q5",
+      blanks:1,
+      prompt:"___ moras?",
+      a1:["Onde","De onde","Quando","Como"],
+      c1:"Onde",
+      answer:"Onde moras?",
+      en:"Where do you live?",
+      tr:"Nerede yaşıyorsun?"
+    },
+    {
+      id:"q6",
+      blanks:2,
+      prompt:"___ ___ vocês?",
+      a1:["De onde","Onde","Para onde","Como"],
+      c1:"De onde",
+      a2:["são","és","é","estão"],
+      c2:"são",
+      answer:"De onde são vocês?",
+      en:"Where are you (pl.) from?",
+      tr:"Siz nerelisiniz?"
+    },
+    {
+      id:"q7",
+      blanks:1,
+      prompt:"___ línguas falas?",
+      a1:["Que","Qual","Como","Quantos"],
+      c1:"Que",
+      answer:"Que línguas falas?",
+      en:"Which languages do you speak?",
+      tr:"Hangi dilleri konuşuyorsun?"
+    },
+    {
+      id:"q8",
+      blanks:1,
+      prompt:"___ é a tua profissão?",
+      a1:["Qual","Que","Como","Quando"],
+      c1:"Qual",
+      answer:"Qual é a tua profissão?",
+      en:"What is your profession?",
+      tr:"Mesleğin nedir?"
+    },
+    {
+      id:"q9",
+      blanks:1,
+      prompt:"___ é o teu aniversário?",
+      a1:["Quando","Que","Qual","Como"],
+      c1:"Quando",
+      answer:"Quando é o teu aniversário?",
+      en:"When is your birthday?",
+      tr:"Doğum günün ne zaman?"
+    },
+    {
+      id:"q10",
+      blanks:2,
+      prompt:"___ horas ___ a aula?",
+      a1:["A que","Que","Quando","Como"],
+      c1:"A que",
+      a2:["é","foi","fica","chega"],
+      c2:"é",
+      answer:"A que horas é a aula?",
+      en:"At what time is the class?",
+      tr:"Ders saat kaçta?"
+    },
+    {
+      id:"q11",
+      blanks:1,
+      prompt:"___ estás?",
+      a1:["Como","Quando","Onde","Porquê"],
+      c1:"Como",
+      answer:"Como estás?",
+      en:"How are you?",
+      tr:"Nasılsın?"
+    },
+    {
+      id:"q12",
+      blanks:2,
+      prompt:"___ ___ hoje?",
+      a1:["Para onde","Onde","De onde","Quando"],
+      c1:"Para onde",
+      a2:["vais","vai","vão","vamos"],
+      c2:"vais",
+      answer:"Para onde vais hoje?",
+      en:"Where are you going today?",
+      tr:"Bugün nereye gidiyorsun?"
+    },
+  ];
+
+  // 4) Modais
+  const MODALS_DATA = [
+    {
+      id:"m1",
+      blanks:1,
+      prompt:"Hoje eu ___ estudar muito para o exame. (have to)",
+      a1:["tenho de","quero","posso","gosto de"],
+      c1:"tenho de",
+      answer:"Hoje eu tenho de estudar muito para o exame.",
+      en:"Today I have to study a lot for the exam.",
+      tr:"Bugün sınav için çok çalışmak zorundayım."
+    },
+    {
+      id:"m2",
+      blanks:1,
+      prompt:"Tu ___ ir ao médico, é um conselho importante. (should)",
+      a1:["deves","podes","vais","adoras"],
+      c1:"deves",
+      answer:"Tu deves ir ao médico, é um conselho importante.",
+      en:"You should go to the doctor, it's important advice.",
+      tr:"Doktora gitmelisin, bu önemli bir tavsiye."
+    },
+    {
+      id:"m3",
+      blanks:1,
+      prompt:"Ela ___ acordar cedo amanhã, é obrigatório. (has to)",
+      a1:["tem de","gosta de","vai","pode"],
+      c1:"tem de",
+      answer:"Ela tem de acordar cedo amanhã, é obrigatório.",
+      en:"She has to wake up early tomorrow, it's mandatory.",
+      tr:"Yarın erken kalkmak zorunda, bu zorunlu."
+    },
+    {
+      id:"m4",
+      blanks:1,
+      prompt:"Nós ___ de ajuda com este exercício. (need)",
+      a1:["precisamos","sabemos","fazemos","queremos"],
+      c1:"precisamos",
+      answer:"Nós precisamos de ajuda com este exercício.",
+      en:"We need help with this exercise.",
+      tr:"Bu alıştırmada yardıma ihtiyacımız var."
+    },
+    {
+      id:"m5",
+      blanks:1,
+      prompt:"Eles ___ chegar a horas, é uma regra da empresa. (must/should)",
+      a1:["devem","podem","gostam de","descansam"],
+      c1:"devem",
+      answer:"Eles devem chegar a horas, é uma regra da empresa.",
+      en:"They must arrive on time, it's a company rule.",
+      tr:"Zamanında gelmeleri gerekir, bu şirket kuralı."
+    },
+    {
+      id:"m6",
+      blanks:1,
+      prompt:"Vocês ___ estudar mais gramática. (should)",
+      a1:["devem","querem","sabem","podem"],
+      c1:"devem",
+      answer:"Vocês devem estudar mais gramática.",
+      en:"You (pl.) should study more grammar.",
+      tr:"Daha çok gramer çalışmalısınız."
+    },
+  ];
+
+  // 5) Comparativos
+  const COMP_DATA = [
+    {
+      id:"c1",
+      blanks:2,
+      prompt:"O João é ___ alto ___ o Pedro.",
+      a1:["mais","menos","tão"],
+      c1:"mais",
+      a2:["do que","em","de"],
+      c2:"do que",
+      answer:"O João é mais alto do que o Pedro.",
+      en:"João is taller than Pedro.",
+      tr:"João, Pedro'dan daha uzun."
+    },
+    {
+      id:"c2",
+      blanks:2,
+      prompt:"Esta casa é ___ pequena ___ aquela.",
+      a1:["menos","mais","tão"],
+      c1:"menos",
+      a2:["do que","por","contra"],
+      c2:"do que",
+      answer:"Esta casa é menos pequena do que aquela.",
+      en:"This house is less small than that one.",
+      tr:"Bu ev ötekinden daha az küçük."
+    },
+    {
+      id:"c3",
+      blanks:2,
+      prompt:"O meu carro é ___ rápido ___ o teu.",
+      a1:["tão","mais","menos"],
+      c1:"tão",
+      a2:["como","de","por"],
+      c2:"como",
+      answer:"O meu carro é tão rápido como o teu.",
+      en:"My car is as fast as yours.",
+      tr:"Arabam seninki kadar hızlı."
+    },
+    {
+      id:"c4",
+      blanks:1,
+      prompt:"O português do João é ___ do que o meu. (better)",
+      a1:["melhor","maior","pior","menor"],
+      c1:"melhor",
+      answer:"O português do João é melhor do que o meu.",
+      en:"João's Portuguese is better than mine.",
+      tr:"João'nun Portekizcesi benimkinden daha iyi."
+    },
+    {
+      id:"c5",
+      blanks:1,
+      prompt:"A comida aqui é ___ do que naquele restaurante. (worse)",
+      a1:["pior","melhor","maior","menor"],
+      c1:"pior",
+      answer:"A comida aqui é pior do que naquele restaurante.",
+      en:"The food here is worse than in that restaurant.",
+      tr:"Buradaki yemek oradakinden daha kötü."
+    },
+    {
+      id:"c6",
+      blanks:1,
+      prompt:"O apartamento dele é ___ do que o meu. (bigger)",
+      a1:["maior","melhor","pior","menor"],
+      c1:"maior",
+      answer:"O apartamento dele é maior do que o meu.",
+      en:"His flat is bigger than mine.",
+      tr:"Onun dairesi benimkinden daha büyük."
+    },
+    {
+      id:"c7",
+      blanks:1,
+      prompt:"O meu telemóvel é ___ do que o teu. (smaller)",
+      a1:["menor","maior","melhor","pior"],
+      c1:"menor",
+      answer:"O meu telemóvel é menor do que o teu.",
+      en:"My phone is smaller than yours.",
+      tr:"Telefonum seninkinden daha küçük."
+    },
+  ];
+
+  // 6) Demonstrativos PLUS (Contractions & Abstract)
+  // Logic: 9 options grid where applicable. Contractions focus.
+  const DEMONSTR_DATA = [
+    // CONTRACTIONS WITH "EM" (In/On)
+    {
+      id:"dp1", blanks:1,
+      prompt:"(Moro aqui) Eu moro ___ casa.",
+      a1:["nesta","nessa","naquela","desta","dessa","daquela","neste","nesse","naquele"], c1:"nesta",
+      answer:"Eu moro nesta casa.",
+      en:"(I live here) I live in this house. (Em + Esta)",
+      tr:"(Burada yaşıyorum) Bu evde yaşıyorum."
+    },
+    {
+      id:"dp2", blanks:1,
+      prompt:"(Aí onde estás) Está muito calor ___ sala?",
+      a1:["nessa","nesta","naquela","dessa","desta","daquela","nesse","neste","naquele"], c1:"nessa",
+      answer:"Está muito calor nessa sala?",
+      en:"(There where you are) Is it very hot in that room? (Em + Essa)",
+      tr:"(Olduğun yerde) O odada hava çok mu sıcak?"
+    },
+
+    // CONTRACTIONS WITH "DE" (Of/From/About)
+    {
+      id:"dp3", blanks:1,
+      prompt:"(O que tu disseste) Eu não gosto nada ___.",
+      a1:["disso","disto","daquilo","nisso","nisto","naquilo","esse","isso","isto"], c1:"disso",
+      answer:"Eu não gosto nada disso.",
+      en:"(What you said) I don't like that at all. (De + Isso)",
+      tr:"(Söylediğin şey) Bundan/Ondan hiç hoşlanmıyorum."
+    },
+    {
+      id:"dp4", blanks:1,
+      prompt:"(O bolo aqui) Queres um bocado ___ bolo?",
+      a1:["deste","desta","disto","desse","dessa","disso","daquele","daquela","daquilo"], c1:"deste",
+      answer:"Queres um bocado deste bolo?",
+      en:"(The cake here) Do you want a piece of this cake? (De + Este)",
+      tr:"(Buradaki pasta) Bu pastadan bir parça ister misin?"
+    },
+    {
+      id:"dp5", blanks:1,
+      prompt:"(Longe) Qual é o nome ___ rapaz ali?",
+      a1:["daquele","daquela","daquilo","deste","desta","disto","desse","dessa","disso"], c1:"daquele",
+      answer:"Qual é o nome daquele rapaz ali?",
+      en:"(Far away) What is the name of that boy over there? (De + Aquele)",
+      tr:"(Uzaktaki) Şuradaki çocuğun adı ne?"
+    },
+
+    // CONTRACTIONS WITH "A" (To/At)
+    {
+      id:"dp6", blanks:1,
+      prompt:"(Longe) Vou à praia e depois vou ___ restaurante ali.",
+      a1:["àquele","a esse","a este","àquela","àquilo","naquele","neste","nesse","daquele"], c1:"àquele",
+      answer:"Vou à praia e depois vou àquele restaurante ali.",
+      en:"I'm going to the beach and then to that restaurant over there. (A + Aquele)",
+      tr:"Plaja gidiyorum, sonra da şuradaki restorana gideceğim."
+    },
+
+    // ABSTRACT / NEUTRAL VS VARIABLE
+    {
+      id:"dp7", blanks:1,
+      prompt:"(Abstrato) O que é ___? Nunca vi tal coisa.",
+      a1:["isto","este","esta","isso","esse","essa","aquilo","aquele","aquela"], c1:"isto",
+      answer:"O que é isto?",
+      en:"What is this (object/situation)? I've never seen such a thing.",
+      tr:"Bu nedir? Böyle bir şey hiç görmedim."
+    },
+    {
+      id:"dp8", blanks:1,
+      prompt:"(Variável) O que é ___ animal? É um cão ou um lobo?",
+      a1:["este","isto","esta","esse","isso","essa","aquele","aquilo","aquela"], c1:"este",
+      answer:"O que é este animal?",
+      en:"What is this animal? Is it a dog or a wolf?",
+      tr:"Bu hayvan nedir? Köpek mi kurt mu?"
+    }
+  ];
+
+  // 7) Aparência física
+  const APPEAR_DATA = [
+    {
+      id:"a1",
+      blanks:1,
+      prompt:"O João é muito ___. (tall)",
+      a1:["alto","baixo","magro","gordo"],
+      c1:"alto",
+      answer:"O João é muito alto.",
+      en:"João is very tall.",
+      tr:"João çok uzun boylu."
+    },
+    {
+      id:"a2",
+      blanks:1,
+      prompt:"A Ana é ___. (short)",
+      a1:["baixa","alta","magra","gorda"],
+      c1:"baixa",
+      answer:"A Ana é baixa.",
+      en:"Ana is short.",
+      tr:"Ana kısa boylu."
+    },
+    {
+      id:"a3",
+      blanks:1,
+      prompt:"O meu irmão está um pouco ___. (thin)",
+      a1:["magro","gordo","feio","bonito"],
+      c1:"magro",
+      answer:"O meu irmão está um pouco magro.",
+      en:"My brother is a bit thin.",
+      tr:"Kardeşim biraz zayıf."
+    },
+    {
+      id:"a4",
+      blanks:1,
+      prompt:"Depois das férias estou mais ___. (fat)",
+      a1:["gordo","magro","alto","baixo"],
+      c1:"gordo",
+      answer:"Depois das férias estou mais gordo.",
+      en:"After the holidays I am fatter.",
+      tr:"Tatilden sonra biraz kilo aldım."
+    },
+    {
+      id:"a5",
+      blanks:1,
+      prompt:"Ela é muito ___. (beautiful)",
+      a1:["bonita","feia","alta","baixa"],
+      c1:"bonita",
+      answer:"Ela é muito bonita.",
+      en:"She is very beautiful.",
+      tr:"O çok güzel."
+    },
+    {
+      id:"a6",
+      blanks:1,
+      prompt:"O filme é tão ___ que não quero ver outra vez. (ugly / bad-looking)",
+      a1:["feio","bonito","magro","velho"],
+      c1:"feio",
+      answer:"O filme é tão feio que não quero ver outra vez.",
+      en:"The movie is so ugly/bad that I don't want to watch it again.",
+      tr:"Film o kadar kötü ki tekrar izlemek istemiyorum."
+    },
+    {
+      id:"a7",
+      blanks:1,
+      prompt:"O meu avô é ___. (old)",
+      a1:["velho","novo","bonito","magro"],
+      c1:"velho",
+      answer:"O meu avô é velho.",
+      en:"My grandfather is old.",
+      tr:"Büyükbabam yaşlı."
+    },
+    {
+      id:"a8",
+      blanks:1,
+      prompt:"A minha irmã é muito ___. (young)",
+      a1:["nova","velha","alta","baixa"],
+      c1:"nova",
+      answer:"A minha irmã é muito nova.",
+      en:"My sister is very young.",
+      tr:"Kız kardeşim çok genç."
+    },
+  ];
+
+  // 8) Presente contínuo: estar a + infinitivo
+  const PRESENT_CONT_DATA = [
+    {
+      id:"pc1",
+      blanks:2,
+      prompt:"Eu ___ a ___ português neste momento.",
+      a1:["estou","sou","fico","andam"],
+      c1:"estou",
+      a2:["estudar","estudo","estudado","estudo a"],
+      c2:"estudar",
+      answer:"Eu estou a estudar português neste momento.",
+      en:"I am studying Portuguese at this moment.",
+      tr:"Şu anda Portekizce çalışıyorum."
+    },
+    {
+      id:"pc2",
+      blanks:1,
+      prompt:"Ela ___ a trabalhar no escritório agora.",
+      a1:["está","é","vai","tem"],
+      c1:"está",
+      answer:"Ela está a trabalhar no escritório agora.",
+      en:"She is working at the office now.",
+      tr:"Şu anda ofiste çalışıyor."
+    },
+    {
+      id:"pc3",
+      blanks:1,
+      prompt:"Nós ___ a comer sopa quente.",
+      a1:["estamos","somos","vamos","têm"],
+      c1:"estamos",
+      answer:"Nós estamos a comer sopa quente.",
+      en:"We are eating hot soup.",
+      tr:"Sıcak çorba içiyoruz."
+    },
+    {
+      id:"pc4",
+      blanks:1,
+      prompt:"O que é que tu ___ a fazer?",
+      a1:["estás","fazes","és","tens"],
+      c1:"estás",
+      answer:"O que é que tu estás a fazer?",
+      en:"What are you doing?",
+      tr:"Ne yapıyorsun?"
+    },
+    {
+      id:"pc5",
+      blanks:1,
+      prompt:"Eles ___ a ver um filme interessante.",
+      a1:["estão","são","vão","podem"],
+      c1:"estão",
+      answer:"Eles estão a ver um filme interessante.",
+      en:"They are watching an interesting movie.",
+      tr:"İlginç bir film izliyorlar."
+    },
+    {
+      id:"pc6",
+      blanks:1,
+      prompt:"Eu não ___ a ouvir nada.",
+      a1:["estou","sou","tenho","fico"],
+      c1:"estou",
+      answer:"Eu não estou a ouvir nada.",
+      en:"I am not hearing anything.",
+      tr:"Hiçbir şey duymuyorum."
+    },
+    {
+      id:"pc7",
+      blanks:1,
+      prompt:"Vocês ___ a esperar o autocarro?",
+      a1:["estão","são","vão","têm"],
+      c1:"estão",
+      answer:"Vocês estão a esperar o autocarro?",
+      en:"Are you waiting for the bus?",
+      tr:"Otobüsü mü bekliyorsunuz?"
+    },
+    {
+      id:"pc8",
+      blanks:1,
+      prompt:"O bebé ___ a dormir.",
+      a1:["está","é","vai","tem"],
+      c1:"está",
+      answer:"O bebé está a dormir.",
+      en:"The baby is sleeping.",
+      tr:"Bebek uyuyor."
+    },
+  ];
+
+  // 9) Bom vs bem
+  const BOM_BEM_DATA = [
+    {
+      id:"bb1",
+      blanks:1,
+      prompt:"Eu estou ___, obrigado.",
+      a1:["bem","bom","boa","bons"],
+      c1:"bem",
+      answer:"Eu estou bem, obrigado.",
+      en:"I am well, thank you.",
+      tr:"İyiyim, teşekkür ederim."
+    },
+    {
+      id:"bb2",
+      blanks:1,
+      prompt:"Como vai o teu dia? – O meu dia vai ___.",
+      a1:["bem","bom","boa","bons"],
+      c1:"bem",
+      answer:"O meu dia vai bem.",
+      en:"My day is going well.",
+      tr:"Günüm iyi gidiyor."
+    },
+    {
+      id:"bb3",
+      blanks:1,
+      prompt:"A sopa está muito ___.",
+      a1:["boa","bom","bons","bens"],
+      c1:"boa",
+      answer:"A sopa está muito boa.",
+      en:"The soup is very good.",
+      tr:"Çorba çok güzel."
+    },
+    {
+      id:"bb4",
+      blanks:1,
+      prompt:"Ele canta ___.",
+      a1:["bem","bom","boa","bens"],
+      c1:"bem",
+      answer:"Ele canta bem.",
+      en:"He sings well.",
+      tr:"İyi şarkı söylüyor."
+    },
+    {
+      id:"bb5",
+      blanks:1,
+      prompt:"Eles são ___ amigos.",
+      a1:["bons","bem","bom","boa"],
+      c1:"bons",
+      answer:"Eles são bons amigos.",
+      en:"They are good friends.",
+      tr:"Onlar iyi arkadaşlar."
+    },
+    {
+      id:"bb6",
+      blanks:1,
+      prompt:"Hoje o tempo está ___.",
+      a1:["bom","bem","boa","bens"],
+      c1:"bom",
+      answer:"Hoje o tempo está bom.",
+      en:"The weather is good today.",
+      tr:"Bugün hava güzel."
+    },
+    {
+      id:"bb7",
+      blanks:1,
+      prompt:"Ela fala português muito ___.",
+      a1:["bem","bom","boa","bons"],
+      c1:"bem",
+      answer:"Ela fala português muito bem.",
+      en:"She speaks Portuguese very well.",
+      tr:"Portekizceyi çok iyi konuşuyor."
+    },
+    {
+      id:"bb8",
+      blanks:1,
+      prompt:"Este filme é muito ___.",
+      a1:["bom","bem","boa","bens"],
+      c1:"bom",
+      answer:"Este filme é muito bom.",
+      en:"This movie is very good.",
+      tr:"Bu film çok iyi."
+    },
+  ];
+  // ==== CHAPTER 04: TRAINING DATASETS END ====
+
+
+
+  // ==== CHAPTER 05: CHEAT SHEETS + MODE MAPPING BEGIN ====
+  const CHEAT_FAMILY = {
+    title:"Demonstrativos (Locais)",
+    rows:[
+      ["AQUI (Speaker): Este / Esta / Estes / Estas / Isto (neutro)"],
+      ["AÍ (Listener): Esse / Essa / Esses / Essas / Isso (neutro)"],
+      ["ALI/LÁ (Far): Aquele / Aquela / Aqueles / Aquelas / Aquilo (neutro)"],
+    ]
+  };
+  const CHEAT_FAMILY_TREE = {
+    title:"Família / árvore",
+    rows:[
+      ["pai/mãe → parents", "filho/filha → children"],
+      ["irmão/irmã → siblings"],
+      ["tio/tia ↔ sobrinho/sobrinha"],
+      ["primo/prima → cousin"],
+      ["avô/avó → grandparents", "genro/nora → in-laws"],
+    ]
+  };
+  const CHEAT_QUEST = {
+    title:"Perguntas (básicas)",
+    rows:[
+      ["Como te chamas? / Qual é o teu nome?"],
+      ["De onde és? / De onde é você?"],
+      ["Onde moras? / Para onde vais hoje?"],
+      ["Quantos anos tens?"],
+      ["A que horas é a aula?"],
+      ["Que línguas falas?"],
+    ]
+  };
+  const CHEAT_MODALS = {
+    title:"Obrigação / conselho / necessidade",
+    rows:[
+      ["ter de + inf. → have to / must"],
+      ["dever + inf. → should / ought to"],
+      ["precisar de + nome/inf. → need to"],
+      ["Ex.: tenho de estudar, devo descansar, preciso de ajuda"],
+    ]
+  };
+  const CHEAT_COMP = {
+    title:"Comparativos",
+    rows:[
+      ["mais ... do que → more ... than"],
+      ["menos ... do que → less ... than"],
+      ["tão ... como → as ... as"],
+      ["melhor/pior → better/worse"],
+      ["maior/menor → bigger/smaller"],
+    ]
+  };
+  const CHEAT_DEMON = {
+    title:"Demonstrativos+ (Contrações)",
+    rows:[
+      ["em + este/esse/aquele → neste, nessa, naquele..."],
+      ["de + este/esse/aquele → deste, dessa, daquele..."],
+      ["a + aquele → àquele"],
+      ["Neutros (isto, isso, aquilo) também contraem: disto, nisso, àquilo"],
+    ]
+  };
+  const CHEAT_APPEAR = {
+    title:"Aparência física",
+    rows:[
+      ["alto/baixa, gordo/magra"],
+      ["bonito/bonita, feio/feia"],
+      ["velho/novo"],
+    ]
+  };
+  const CHEAT_CONT = {
+    title:"Presente contínuo (PT-PT)",
+    rows:[
+      ["estar + a + infinitivo"],
+      ["estou/estás/está/estamos/estão a + estudar"],
+      ["Agora / neste momento → muitas vezes presente contínuo"],
+      ["Ex.: O que estás a fazer? Estou a estudar português."],
+    ]
+  };
+  const CHEAT_BOMBEM = {
+    title:"Bom vs bem",
+    rows:[
+      ["bom / boa / bons / boas → adjectivo", "um filme bom, uma sopa boa"],
+      ["bem → advérbio", "falar bem, cantar bem"],
+      ["estar / sentir-se bem", "O meu dia vai bem."],
+    ]
+  };
+
+  const CHEATS = {
+    family:         CHEAT_FAMILY,
+    familyTree:     CHEAT_FAMILY_TREE,
+    questions:      CHEAT_QUEST,
+    modals:         CHEAT_MODALS,
+    comparatives:   CHEAT_COMP,
+    demonstratives: CHEAT_DEMON,
+    appearance:     CHEAT_APPEAR,
+    presentCont:    CHEAT_CONT,
+    bomBem:         CHEAT_BOMBEM,
+  };
+
+  const MODE_TITLES = {
+    prepositions:"Preposições",
+    family:"Demonstrativos simples",
+    familyTree:"Árvore genealógica",
+    questions:"Perguntas",
+    modals:"Modais: ter de / dever",
+    comparatives:"Comparativos",
+    demonstratives:"Demonstrativos+",
+    appearance:"Aparência física",
+    presentCont:"Presente contínuo",
+    bomBem:"Bom vs bem",
+  };
+
+  const TRAINING_SETS = {
+    family:         FAMILY_DATA,
+    familyTree:     FAMILY_TREE_DATA,
+    questions:      QUESTIONS_DATA,
+    modals:         MODALS_DATA,
+    comparatives:   COMP_DATA,
+    demonstratives: DEMONSTR_DATA,
+    appearance:     APPEAR_DATA,
+    presentCont:    PRESENT_CONT_DATA,
+    bomBem:         BOM_BEM_DATA,
+  };
+
+  // ---------- Zones ----------
+  const KISS_ZONES = {
+    soft: [
+      { key:"cheek",       label:"cheek",        cat:"head",  group:"soft" },
+      { key:"forehead",    label:"forehead",     cat:"head",  group:"soft" },
+      { key:"ear",         label:"ear",          cat:"head",  group:"soft" },
+      { key:"behind_ear",  label:"behind ear",   cat:"head",  group:"soft" },
+      { key:"lips_soft",   label:"lips",         cat:"head",  group:"soft" },
+      { key:"hand",        label:"hand",         cat:"upper", group:"soft" },
+    ],
+    warm: [
+      { key:"lips_warm",   label:"lips",         cat:"head",  group:"warm" },
+      { key:"neck",        label:"neck",         cat:"upper", group:"warm" },
+      { key:"shoulder",    label:"shoulder",     cat:"upper", group:"warm" },
+      { key:"back",        label:"back",         cat:"upper", group:"warm" },
+      { key:"lower_back",  label:"lower back",   cat:"upper", group:"warm" },
+      { key:"stomach",     label:"stomach / abdomen", cat:"upper", group:"warm" },
+      { key:"ribs",        label:"ribs",         cat:"upper", group:"warm" },
+      { key:"feet",        label:"feet",         cat:"feet",  group:"warm" },
+    ],
+    spicy: [
+      { key:"lips_spicy",    label:"lips",           cat:"head",  group:"spicy" },
+      { key:"inner_thigh",   label:"inner thigh",    cat:"lower", group:"spicy" },
+      { key:"thighs",        label:"thighs",         cat:"lower", group:"spicy" },
+      { key:"butt",          label:"butt (ass)",     cat:"lower", group:"spicy" },
+      { key:"chest_breasts", label:"chest/breasts",  cat:"upper", group:"spicy" },
+      { key:"calves",        label:"calves",         cat:"lower", group:"spicy" },
+    ]
+  };
+  const MASSAGE_ZONES = {
+    soft: [
+      { key:"hand_m",       label:"hand",              cat:"upper", group:"soft" },
+      { key:"arms_m",       label:"arms",              cat:"upper", group:"soft" },
+      { key:"neck_m",       label:"neck",              cat:"upper", group:"soft" },
+      { key:"shoulder_m",   label:"shoulder",          cat:"upper", group:"soft" },
+      { key:"back_m",       label:"back",              cat:"upper", group:"soft" },
+      { key:"lower_back_m", label:"lower back",        cat:"upper", group:"soft" },
+    ],
+    warm: [
+      { key:"head_m",       label:"head (scalp)",      cat:"head",  group:"warm" },
+      { key:"abdomen_m",    label:"stomach / abdomen", cat:"upper", group:"warm" },
+      { key:"ribs_m",       label:"ribs",              cat:"upper", group:"warm" },
+      { key:"ears_m",       label:"ears",              cat:"head",  group:"warm" },
+      { key:"feet_m",       label:"feet",              cat:"feet",  group:"warm" },
+    ],
+    spicy: [
+      { key:"inner_thigh_m",    label:"inner thigh",     cat:"lower", group:"spicy" },
+      { key:"thighs_m",         label:"thighs",          cat:"lower", group:"spicy" },
+      { key:"butt_m",           label:"butt (ass)",      cat:"lower", group:"spicy" },
+      { key:"chest_breasts_m",  label:"chest / breasts", cat:"upper", group:"spicy" },
+      { key:"calves_m",         label:"calves",          cat:"lower", group:"spicy" },
+      { key:"asshole_m",        label:"asshole (anus)",  cat:"lower", group:"spicy" },
+      { key:"balls_m",          label:"balls (testicles)",cat:"lower", group:"spicy" },
+    ]
+  };
+
+  // ---------- Clothes ----------
+  const CLOTHES_LABELS = {
+    glasses: "glasses", earrings: "earrings", headgear: "headgear", hairclips: "hairclips",
+    jacket: "jacket/blazer", sweater: "sweater", tshirt: "t-shirt", blouse: "blouse", bra: "bra",
+    watch: "watch", bracelet: "bracelet", ring: "ring", gloves: "gloves",
+    pants: "pants", shorts: "shorts", skirt: "skirt", panties: "panties", stockings: "stockings",
+    shoes: "shoes", socks: "socks",
+  };
+  const CATEGORIES = {
+    head:  ["glasses","earrings","headgear","hairclips"],
+    upper: ["jacket","sweater","tshirt","blouse","bra","watch","bracelet","ring","gloves"],
+    lower: ["pants","shorts","skirt","panties","stockings"],
+    feet:  ["shoes","socks"],
+  };
+  const DEFAULT_HER = { glasses:0, earrings:2, headgear:0, hairclips:0, jacket:0, sweater:0, tshirt:1, blouse:0, bra:1, watch:0, bracelet:0, ring:0, gloves:0, pants:1, shorts:0, skirt:0, panties:1, stockings:0, shoes:2, socks:2 };
+  const DEFAULT_YOU = { glasses:0, earrings:0, headgear:0, hairclips:0, jacket:0, sweater:0, tshirt:1, blouse:0, bra:0, watch:0, bracelet:0, ring:0, gloves:0, pants:1, shorts:0, skirt:0, panties:1, stockings:0, shoes:2, socks:2 };
+
+  const hasPanties = (inv)=> (inv.panties||0) > 0;
+
+  function buildSentence(personLabel, v, second) {
+    const p = PERSONS.find(x => x.label === personLabel);
+    const conj = v.conj[p.idx];
+    const mid = v.prep ? ` ${v.prep} ` : " ";
+    return `${personLabel} ${conj}${mid}${second.pt}.`;
+  }
+  function countByCategory(inv) {
+    const out = { head:0, upper:0, lower:0, feet:0, total:0 };
+    for (const cat of Object.keys(CATEGORIES)) out[cat] = sum(CATEGORIES[cat].map(k => inv[k]||0));
+    out.total = out.head + out.upper + out.lower + out.feet;
+    return out;
+  }
+  function canRemove(inv, key) {
+    const v = k => inv[k]||0;
+    if (!v(key)) return false;
+    if (key==="jacket" && (v("glasses")>0 || v("headgear")>0)) return false;
+    if (key==="sweater" && v("jacket")>0) return false;
+    if (key==="tshirt"  && v("sweater")>0) return false;
+    if (key==="bra"     && v("tshirt")>0) return false;
+    if ((key==="watch" || key==="bracelet") && v("sweater")>0) return false;
+    if (key==="ring" && v("gloves")>0) return false;
+    if (key==="hairclips" && v("headgear")>0) return false;
+    if (key==="socks" && v("shoes")>0) return false;
+    if ((key==="pants" || key==="shorts") && v("shoes")>0) return false;
+    if (key==="stockings" && (v("pants")>0 || v("shorts")>0)) return false;
+    if (key==="panties" && (v("pants")>0 || v("shorts")>0 || v("stockings")>0 || v("jacket")>0)) return false;
+    return true;
+  }
+  function zoneAllowedFor(inv, zone, actionType) {
+    const v = k => inv[k]||0;
+    if (zone.cat==="head") {
+      if (actionType==="kiss" || actionType==="bite") {
+        if (v("headgear")>0 || v("glasses")>0) return false;
+        if ((zone.key==="ear" || zone.key==="behind_ear") && v("earrings")>0) return false;
+      } else {
+        if (zone.key==="ears_m" && v("earrings")>0) return false;
+        if (zone.key!=="ears_m" && v("headgear")>0) return false;
+      }
+    }
+    if (zone.cat==="feet" && (v("socks")>0 || v("shoes")>0)) return false;
+    if (zone.cat==="lower" && (v("pants")>0 || v("shorts")>0)) return false;
+    if (zone.cat==="upper" && v("sweater")>0) return false;
+    if (zone.cat==="upper" && v("tshirt")>0 && (actionType==="kiss" || actionType==="bite")) return false;
+    if ((zone.key==="chest_breasts" || zone.key==="chest_breasts_m") && v("bra")>0 && (actionType==="kiss" || actionType==="bite")) return false;
+
+    if ((zone.key==="asshole_m" || zone.key==="balls_m") && hasPanties(inv)) return false;
+
+    return true;
+  }
+
+  // ---------- Изолированный секундомер ----------
+  const Stopwatch = forwardRef(function Stopwatch({ className, onPauseChange }, ref) {
+    const [paused, setPaused] = useState(false);
+    const digitsRef = useRef(null);
+    const accumulatedMsRef = useRef(0);
+    const lastResumeAtRef = useRef(Date.now());
+
+    useEffect(() => {
+      const id = setInterval(() => {
+        const now = Date.now();
+        const ms = paused ? accumulatedMsRef.current : (accumulatedMsRef.current + (now - lastResumeAtRef.current));
+        const s  = Math.floor(ms/1000);
+        const mm = String(Math.floor(s/60)).padStart(2,'0');
+        const ss = String(s%60).padStart(2,'0');
+        if (digitsRef.current) digitsRef.current.textContent = `⏱ ${mm}:${ss}`;
+      }, 250);
+      return () => clearInterval(id);
+    }, [paused]);
+
+    const doPause = () => {
+      if (paused) return;
+      accumulatedMsRef.current += Date.now() - lastResumeAtRef.current;
+      setPaused(true);
+      onPauseChange && onPauseChange(true, accumulatedMsRef.current);
+    };
+    const doResume = () => {
+      if (!paused) return;
+      lastResumeAtRef.current = Date.now();
+      setPaused(false);
+      onPauseChange && onPauseChange(false, accumulatedMsRef.current);
+    };
+
+    const toggle = () => paused ? doResume() : doPause();
+
+    useImperativeHandle(ref, () => ({
+      pause: doPause,
+      resume: doResume,
+      isPaused: () => paused,
+      getElapsed: () => (paused
+        ? accumulatedMsRef.current
+        : (accumulatedMsRef.current + (Date.now() - lastResumeAtRef.current))),
+      setElapsed: (ms) => {
+        accumulatedMsRef.current = Math.max(0, Number(ms)||0);
+        lastResumeAtRef.current = Date.now();
+      }
+    }), [paused]);
+
+    return (
+      <div
+        className={className||"k"}
+        style={{minWidth:80, textAlign:'right', cursor:'pointer'}}
+        title={paused? 'Resume timer (click)' : 'Pause timer (click)'}
+        onClick={toggle}
+      >
+        <span ref={digitsRef}>⏱ 00:00</span>
+        {paused ? <span style={{marginLeft:6, opacity:0.8}}>{'⏸'}</span> : null}
+      </div>
+    );
+  });
+
+  function App() {
+    // NAV
+    const [page, setPage] = useState("game");
+    // This tracks the ACTIVE mode for the current question
+    const [currentQuestionMode, setCurrentQuestionMode] = useState("prepositions"); 
+    
+    // This tracks which modes are ENABLED in settings
+    const [enabledModes, setEnabledModes] = useState({
+      prepositions:true,
+      family:false,
+      familyTree:false,
+      questions:false,
+      modals:false,
+      comparatives:false,
+      demonstratives:false,
+      appearance:false,
+      presentCont:false,
+      bomBem:false,
+    });
+    
+    const [trainItem, setTrainItem] = useState(null);
+    const [selA, setSelA] = useState(null);
+    const [selB, setSelB] = useState(null);
+
+    // Prepositions filter
+    const [prepsAllowed, setPrepsAllowed] = useState({ de:true, a:true, em:true, none:true });
+
+    // Which lists are in use
+    const [useFirstList1, setUseFirstList1]   = useState(true);
+    const [useFirstList2, setUseFirstList2]   = useState(true);
+    const [useSecondList1, setUseSecondList1] = useState(true);
+    const [useSecondList2, setUseSecondList2] = useState(true);
+
+    // Base action toggles (ALL visible in Settings)
+    const [includeStrip,   setIncludeStrip]   = useState(true);
+    const [includeKiss,    setIncludeKiss]    = useState(true);
+    const [includeBite,    setIncludeBite]    = useState(true);
+    const [includeMassage, setIncludeMassage] = useState(true);
+    const [includeMasturbate, setIncludeMasturbate] = useState(true);
+
+    // Sex setting
+    const [sexEnabled, setSexEnabled] = useState(false);
+    const [sexMode, setSexMode] = useState(false);
+    const [sexUnlockMsg, setSexUnlockMsg] = useState("");
+    const [showSexUnlock, setShowSexUnlock] = useState(false);
+    const [sexActsCount, setSexActsCount] = useState(0);
+    const [sexReadyToFinish, setSexReadyToFinish] = useState(false);
+    const sexUsedVariants = useRef(new Set());
+    const sexPositions = ["doggy","missionaire","legs on the shoulders","sitting on the bed","sitting on the sofa"];
+    const [sexPendingIntercourse, setSexPendingIntercourse] = useState(false);
+    const [masturbatedHerOnce, setMasturbatedHerOnce] = useState(false);
+    const [masturbatedHimOnce, setMasturbatedHimOnce] = useState(false);
+    const [sexPhase, setSexPhase] = useState('warmup');
+
+    // KISS/MASSAGE groups & subs
+    const defSubK = {}; for (const g of ["soft","warm","spicy"]) for (const z of KISS_ZONES[g]) defSubK[z.key]=true;
+    const defSubM = {}; for (const g of ["soft","warm","spicy"]) for (const z of MASSAGE_ZONES[g]) defSubM[z.key]=true;
+    const [groupsK, setGroupsK] = useState({ soft:true, warm:true, spicy:true });
+    const [groupsM, setGroupsM] = useState({ soft:true, warm:true, spicy:true });
+    const [subsK, setSubsK] = useState(defSubK);
+    const [subsM, setSubsM] = useState(defSubM);
+
+    // Clothing inventories
+    const [herInv, setHerInv] = useState(clone(DEFAULT_HER));
+    const [youInv, setYouInv] = useState(clone(DEFAULT_YOU));
+    const [initHerInv, setInitHerInv] = useState(clone(DEFAULT_HER));
+    const [initYouInv, setInitYouInv] = useState(clone(DEFAULT_YOU));
+    const [savedHerDefault, setSavedHerDefault] = useState(clone(DEFAULT_HER));
+    const [savedYouDefault, setSavedYouDefault] = useState(clone(DEFAULT_YOU));
+
+    // Side-tracking for left/right items (and earrings)
+    const emptySides = { shoes:{left:true,right:true}, socks:{left:true,right:true}, gloves:{left:true,right:true}, earrings:{left:true,right:true} };
+    const [herSides, setHerSides] = useState(clone(emptySides));
+    const [youSides, setYouSides] = useState(clone(emptySides));
+
+    // Round & scoring
+    const [questionNo, setQuestionNo] = useState(1);
+    const [round, setRound] = useState(1);
+    const [success1, setSuccess1] = useState(0);
+    const [fail1, setFail1]       = useState(0);
+    const [success2, setSuccess2] = useState(0);
+    const [fail2, setFail2]       = useState(0);
+    const [finishMode, setFinishMode] = useState(false);
+
+    // Removed counters & action stats
+    const [removedHer, setRemovedHer] = useState(0);
+    const [removedYou, setRemovedYou] = useState(0);
+    const zeroSW = { soft:0, warm:0, spicy:0 };
+    const [kissGivenHer, setKissGivenHer] = useState(clone(zeroSW));
+    const [kissGivenYou, setKissGivenYou] = useState(clone(zeroSW));
+    const [massGivenHer, setMassGivenHer] = useState(clone(zeroSW));
+    const [massGivenYou, setMassGivenYou] = useState(clone(zeroSW));
+
+    // Current prompt
+    const [person, setPerson] = useState(rand(PERSONS).label);
+    const [firstVerb, setFirstVerb] = useState(rand(VERBS_L1));
+    const [secondVerb, setSecondVerb] = useState(rand(SECOND_L1));
+
+    // Interaction states
+    const [selectedConj, setSelectedConj] = useState("inf");
+    const [selectedPrep, setSelectedPrep] = useState(null);
+    const [submitState, setSubmitState]   = useState("idle");   // idle | ready | correct | wrong | lockedCorrect
+    const [questionLocked, setQuestionLocked] = useState(false); // true after wrong answer - no more score changes
+    const [canNext, setCanNext] = useState(false);
+    const [lastOutcome, setLastOutcome] = useState(null);
+    const [lastOutcomeDur, setLastOutcomeDur] = useState(null);
+    const [showAnswer, setShowAnswer] = useState(false);
+    const [nextFlash, setNextFlash] = useState(false);
+
+    const [lastAction, setLastAction] = useState(null);
+    const [lastZoneKey, setLastZoneKey] = useState(null);
+
+    // phase
+    const [phase, setPhase] = useState("question");
+    const [round1StatsShown, setRound1StatsShown] = useState(false);
+    const [round2StatsShown, setRound2StatsShown] = useState(false);
+
+    // outcome / zone counters history
+    const outcomeCounts = useRef({ strip:0, kiss:0, massage:0, bite:0, masturbate:0 });
+    const zoneCounts = useRef({});
+    const lastActions = useRef([]);
+    const lastZones = useRef([]);
+    const ACTION_HISTORY_SIZE = 2;
+    const ZONE_HISTORY_SIZE = 3;
+
+    const [showCheat, setShowCheat] = useState(false);
+    const [showEndModal, setShowEndModal] = useState(false);
+    const [endMessage, setEndMessage] = useState("");
+    const [showRestart, setShowRestart] = useState(false);
+
+    // Conjugation options shuffled
+    const [conjShuffled, setConjShuffled] = useState([]);
+    const [personOrder, setPersonOrder] = useState(shuffle(PERSONS.map(p=>p.label)));
+
+    // Coverage / spaced repetition
+    const usedFirst = useRef(new Set());
+    const usedSecond = useRef(new Set());
+    const prepCounts = useRef({de:0,a:0,em:0,none:0});
+    const reviewQueue = useRef([]);
+    const usedTrainIds = useRef(new Set());
+
+    // ---------- Advanced settings ----------
+    // Smart defaults - these are optimized for the best gameplay experience
+    const ADV_DEFAULT = {
+      pace: "normal",
+      // Action weights: strip is most important for progress, kiss/massage for intimacy, masturbate as reward, bite rare for variety
+      actionWeights: { kiss:30, massage:25, strip:25, bite:3, masturbate:17 },
+      // Spice weights: start soft, build warmth, spicy as climax
+      spiceWeights:  { soft:45, warm:40, spicy:15 },
+      // Anti-repeat always on for variety
+      antiRepeatAction: true,
+      antiRepeatZone:   true,
+      // Balance clothes to keep game fair
+      balanceClothes:   true,
+      balanceMaxDiff:   2,
+      // Coverage and error review always on for learning
+      coverageVerbs:    true,
+      errorReview:      true,
+      // Prep targets: "de" most common, then "a", "none" for variety, "em" less common
+      prepTargets:      { de:45, a:30, em:10, none:15 },
+      preset: 'balanced',
+      autoApply: true,
+      voiceCountdown: true
+    };
+    const [advPending, setAdvPending] = useState(ADV_DEFAULT);
+    const [advEff, setAdvEff] = useState(ADV_DEFAULT);
+    const [advChanged, setAdvChanged] = useState(false);
+    const markAdvChanged = (patch) => {
+      setAdvPending(prev => {
+        const next = typeof patch === 'function' ? patch(prev) : { ...prev, ...patch };
+        // Auto-apply immediately
+        setTimeout(() => {
+          const eff = clone(next);
+          eff.actionWeights = normalizePerc(eff.actionWeights);
+          eff.spiceWeights  = normalizePerc(eff.spiceWeights);
+          eff.prepTargets   = (() => {
+            const n = normalizePerc(next.prepTargets);
+            return { de:+(n.de||0), a:+(n.a||0), em:+(n.em||0), none:+(n.none||0) };
+          })();
+          setAdvEff(eff);
+          setAdvChanged(false);
+        }, 0);
+        return next;
+      });
+    };
+    const normalizePerc = (obj) => {
+      const minClamp = 0.0001;
+      const total = Math.max(minClamp, Object.values(obj).reduce((a,b)=>a+b, 0));
+      const out = {};
+      for (const k of Object.keys(obj)) out[k] = Math.max(0, obj[k]) / total;
+      return out;
+    };
+    const applyAdvancedSettings = () => {
+      const eff = clone(advPending);
+      eff.actionWeights = normalizePerc(eff.actionWeights);
+      eff.spiceWeights  = normalizePerc(eff.spiceWeights);
+      eff.prepTargets   = (() => {
+        const n = normalizePerc(advPending.prepTargets);
+        return { de:+(n.de||0), a:+(n.a||0), em:+(n.em||0), none:+(n.none||0) };
+      })();
+      setAdvEff(eff);
+      setAdvChanged(false);
+    };
+    const resetAdvancedSettings = () => { setAdvPending(ADV_DEFAULT); setAdvChanged(true); };
+
+    // Auto-apply advanced settings when they change
+    useEffect(() => {
+      if (advChanged) {
+        applyAdvancedSettings();
+      }
+    }, [advPending]);
+
+    // ---------- Timer state ----------
+    const [timerOpen, setTimerOpen] = useState(false);
+    const [timerLeft, setTimerLeft] = useState(0);
+    const [timerReady, setTimerReady] = useState(false);
+    const timerId = useRef(null);
+    const [audioCtx, setAudioCtx] = useState(null);
+
+    const [finalTimerOpen, setFinalTimerOpen] = useState(false);
+    const [finalTimerLeft, setFinalTimerLeft] = useState(0);
+    const finalTimerId = useRef(null);
+
+    // ⏱ изолированный секундомер
+    const stopwatchRef = useRef(null);
+    const [elapsedUserPaused, setElapsedUserPaused] = useState(false);
+
+    const resumeElapsedIfPaused = () => {
+      try { if (stopwatchRef.current?.isPaused()) stopwatchRef.current.resume(); } catch(e){}
+    };
+    const pauseElapsed = () => { try { stopwatchRef.current?.pause(); } catch(e){} };
+    const resumeElapsed = () => { try { stopwatchRef.current?.resume(); } catch(e){} };
+
+    function startTimer(sec) {
+      if (!sec || sec<=0) return;
+      setTimerLeft(sec);
+      setTimerOpen(true);
+      setTimerReady(false);
+      if (timerId.current) clearInterval(timerId.current);
+      timerId.current = setInterval(()=>{
+        setTimerLeft(prev=>{
+          if (prev<=1) {
+            clearInterval(timerId.current); timerId.current=null;
+            beeps(3, 350, 0.16, 180);
+            setTimerOpen(false);
+            return 0;
+          }
+          return prev-1;
+        });
+      }, 1000);
+    }
+    function cancelTimerSilently() {
+      if (timerId.current) { clearInterval(timerId.current); timerId.current=null; }
+      setTimerOpen(false);
+      setTimerReady(true);
+    }
+    function beeps(n=3, freq=400, gain=0.15, durMs=220) {
+      try {
+        const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (!audioCtx) setAudioCtx(ctx);
+        let t = ctx.currentTime;
+        for (let i=0;i<n;i++) {
+          const osc = ctx.createOscillator();
+          const g = ctx.createGain();
+          osc.frequency.value = freq;
+          g.gain.value = gain;
+          osc.connect(g).connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + durMs/1000);
+          t += (durMs + 120)/1000;
+        }
+      } catch (e) {}
+    }
+
+    function speakText(text) {
+      try {
+        if (!window.speechSynthesis) return;
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(String(text));
+        u.lang = 'en-US';
+        const voices = window.speechSynthesis.getVoices() || [];
+        const candidate = voices.find(v => v.lang && v.lang.startsWith('en') && /female|woman|FEMALE|Female|Zira|Microsoft|Samantha/i.test(v.name))
+                      || voices.find(v => v.lang && v.lang.startsWith('en'));
+        if (candidate) u.voice = candidate;
+        window.speechSynthesis.speak(u);
+      } catch (e) {}
+    }
+
+    function cancelFinalTimer() {
+      if (finalTimerId.current) { clearInterval(finalTimerId.current); finalTimerId.current = null; }
+      setFinalTimerOpen(false);
+      setFinalTimerLeft(0);
+      try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch(e){}
+    }
+
+    function startFinalSexTimer(position) {
+      const duration = 300;
+      if (finalTimerId.current) { clearInterval(finalTimerId.current); finalTimerId.current = null; }
+      setFinalTimerLeft(duration);
+      setFinalTimerOpen(true);
+      if (timerId.current) { clearInterval(timerId.current); timerId.current = null; setTimerOpen(false); }
+      try { window.speechSynthesis && window.speechSynthesis.getVoices(); } catch (e) {}
+
+      finalTimerId.current = setInterval(()=>{
+        setFinalTimerLeft(prev => {
+          const next = prev - 1;
+          if (advEff.voiceCountdown && next <= 20 && next > 0) {
+            speakText(next);
+          }
+          if (next <= 0) {
+            clearInterval(finalTimerId.current); finalTimerId.current = null;
+            setFinalTimerOpen(false);
+            if (advEff.voiceCountdown) speakText('Cum');
+            beeps(3, 450, 0.18, 200);
+            setShowRestart(true);
+            return 0;
+          }
+          return next;
+        });
+      }, 1000);
+    }
+
+    // ---------- Pools & gameplay helpers ----------
+    function filterByPreps(list) {
+      return list.filter(v => (v.prep==="de" && prepsAllowed.de)
+        || (v.prep==="a" && prepsAllowed.a)
+        || (v.prep==="em" && prepsAllowed.em)
+        || (v.prep==="" && prepsAllowed.none));
+    }
+    function firstVerbPoolAll() {
+      let pool = [];
+      if (useFirstList1) pool = pool.concat(filterByPreps(VERBS_L1));
+      if (useFirstList2) pool = pool.concat(filterByPreps(VERBS_L2));
+      if (!pool.length) pool = filterByPreps(VERBS_L1);
+      return pool;
+    }
+    function secondVerbPoolAll() {
+      let pool = [];
+      if (useSecondList1) pool = pool.concat(SECOND_L1);
+      if (useSecondList2) pool = pool.concat(SECOND_L2);
+      if (!pool.length) pool = SECOND_L1;
+      return pool;
+    }
+    function pickPrepCategoryForFirst() {
+      const counts = prepCounts.current;
+      const totalShown = Math.max(1, counts.de+counts.a+counts.em+counts.none);
+      const current = { de:counts.de/totalShown, a:counts.a/totalShown, em:counts.em/totalShown, none:counts.none/totalShown };
+      const deficit = {
+        de: Math.max(0, advEff.prepTargets.de - current.de),
+        a:  Math.max(0, advEff.prepTargets.a  - current.a),
+        em: Math.max(0, advEff.prepTargets.em - current.em),
+        none: Math.max(0, advEff.prepTargets.none - current.none),
+      };
+      const item = weightedPick([
+        { item:"de",   weight: deficit.de   || 0.25 },
+        { item:"a",    weight: deficit.a    || 0.25 },
+        { item:"em",   weight: deficit.em   || 0.25 },
+        { item:"none", weight: deficit.none || 0.25 },
+      ]);
+      return item || "none";
+    }
+    function trainingPoolByMode(mode) {
+      return TRAINING_SETS[mode] || [];
+    }
+    function pickNextTrainingItem(mode) {
+      const pool = trainingPoolByMode(mode);
+      if (!pool.length) return null;
+      // Check if there's a due item for this specific mode
+      const due = reviewQueue.current.find(r => r.dueAt <= questionNo && r.kind==="train" && r.mode===mode);
+      if (due) {
+        const idx = pool.findIndex(x => x.id === due.trainId);
+        if (idx !== -1) {
+          reviewQueue.current = reviewQueue.current.filter(r => r !== due);
+          return pool[idx];
+        }
+        reviewQueue.current = reviewQueue.current.filter(r => r !== due);
+      }
+      const unused = pool.filter(x => !usedTrainIds.current.has(x.id));
+      const choice = rand(unused.length ? unused : pool);
+      usedTrainIds.current.add(choice.id);
+      return choice;
+    }
+    function weightedPick(entries) {
+      const list = entries.filter(e => e.weight > 0);
+      if (!list.length) return null;
+      const total = list.reduce((a,b)=>a+b.weight, 0);
+      let r = Math.random() * total;
+      for (const e of list) { r -= e.weight; if (r <= 0) return e.item; }
+      return list[list.length-1].item;
+    }
+
+    // ---------- Next sentence etc. ----------
+    function randomizeConjOptions() {
+      const opts = Array.from(new Set(firstVerb.conj));
+      setConjShuffled(shuffle(opts));
+    }
+    function reshufflePersons() {
+      setPersonOrder(shuffle(PERSONS.map(p=>p.label)));
+    }
+
+    // --- helper: финальная поза для модалки фиксируется при открытии
+    const [cumFinalPos, setCumFinalPos] = useState(null);
+    function pickFinalPosition() {
+      return Math.random()<0.5 ? "doggy style" : "legs on the shoulders";
+    }
+    function openCumModal() {
+      setCumFinalPos(pickFinalPosition());
+      setShowCumModal(true);
+    }
+    function closeCumModal() {
+      setShowCumModal(false);
+    }
+
+    function nextSentence() {
+      if (phase !== "outcome" && phase !== "waitNext") return;
+
+      if (sexMode && sexReadyToFinish) {
+        openCumModal();
+        return;
+      }
+
+      if (advChanged) applyAdvancedSettings();
+
+      const herTotal = countByCategory(herInv).total;
+      const youTotal = countByCategory(youInv).total;
+
+      if (round === 1 && (herTotal === 0 || youTotal === 0) && !round1StatsShown) {
+        setRound1StatsShown(true);
+        endRoundPrompt(herTotal === 0 ? "Eugene" : "Göknur", null);
+        return;
+      }
+
+      const bothNaked = (herTotal === 0) && (youTotal === 0);
+      if (round === 2 && bothNaked) {
+        if (sexEnabled && !sexMode && !showSexUnlock) {
+          setShowSexUnlock(true);
+          return;
+        }
+        if (!sexEnabled && !round2StatsShown) {
+          setRound2StatsShown(true);
+          endRoundPrompt(herTotal === 0 ? "Eugene" : "Göknur", null);
+          return;
+        }
+      }
+
+      // 1. Pick Next Mode
+      const enabledKeys = Object.keys(enabledModes).filter(k => enabledModes[k]);
+      // Default to prepositions if nothing selected
+      let nextMode = enabledKeys.length ? rand(enabledKeys) : "prepositions";
+
+      // 2. Check Review Queue (High Priority)
+      // Check if we have due items in enabled modes
+      const due = reviewQueue.current.find(r => r.dueAt <= questionNo && (r.mode === "prepositions" ? enabledModes.prepositions : enabledModes[r.mode]));
+      
+      if (due) {
+        if (due.trainId) {
+             nextMode = due.mode;
+        } else {
+             nextMode = "prepositions"; // Preposition review
+        }
+      }
+
+      setCurrentQuestionMode(nextMode);
+
+      // TRAINING modes (not prepositions)
+      if (nextMode !== "prepositions") {
+        const item = pickNextTrainingItem(nextMode);
+        setTrainItem(item);
+        setSelA(null); setSelB(null);
+        setSelectedConj("inf"); setSelectedPrep(null);
+        setSubmitState("idle");
+        setQuestionLocked(false);
+        setLastOutcome(null); setLastOutcomeDur(null);
+        setShowAnswer(false); setShowCheat(false);
+        setTimerReady(false);
+        setCanNext(false);
+        setQuestionNo(n=>n+1);
+        setNextFlash(true); setTimeout(()=>setNextFlash(false),250);
+        setPhase("question");
+        return;
+      }
+
+      // Prepositions Mode
+      let nextPerson = null, nextFirst = null, nextSecond = null;
+      const allFirst = firstVerbPoolAll();
+      const allSecond = secondVerbPoolAll();
+
+      if (due && due.verbKey) { // Preposition review
+        nextFirst = allFirst.find(v => v.key === due.verbKey) || rand(allFirst);
+        if (due.mode === "same") nextPerson = due.person;
+        else {
+          const candidates = PERSONS.map(p=>p.label).filter(l => l !== person);
+          nextPerson = rand(candidates.length?candidates:PERSONS.map(p=>p.label));
+        }
+        nextSecond = rand(allSecond);
+        reviewQueue.current = reviewQueue.current.filter(r => r !== due);
+      } else {
+        let poolFirst = allFirst;
+        if (advEff.coverageVerbs) {
+          const unused = allFirst.filter(v => !usedFirst.current.has(v.key));
+          poolFirst = unused.length ? unused : allFirst;
+        }
+        const cat = pickPrepCategoryForFirst();
+        const byCat = poolFirst.filter(v => (v.prep==="" && cat==="none") || v.prep===cat);
+        nextFirst = (byCat.length? rand(byCat) : rand(poolFirst));
+
+        const persons = PERSONS.map(p=>p.label);
+        const personsNoRepeat = persons.filter(l => l !== person);
+        nextPerson = rand(personsNoRepeat.length?personsNoRepeat:persons);
+
+        let poolSecond = secondVerbPoolAll();
+        if (advEff.coverageVerbs) {
+          const unused2 = poolSecond.filter(s => !usedSecond.current.has(s.pt));
+          poolSecond = unused2.length ? unused2 : poolSecond;
+        }
+        nextSecond = rand(poolSecond);
+      }
+
+      usedFirst.current.add(nextFirst.key);
+      usedSecond.current.add(nextSecond.pt);
+      const prepKey = nextFirst.prep || "none";
+      prepCounts.current[prepKey] = (prepCounts.current[prepKey]||0) + 1;
+
+      setPerson(nextPerson);
+      setFirstVerb(nextFirst);
+      setSecondVerb(nextSecond);
+
+      setSelectedConj("inf");
+      setSelectedPrep(null);
+      setSubmitState("idle");
+      setQuestionLocked(false);
+      setLastOutcome(null);
+      setLastOutcomeDur(null);
+      setShowAnswer(false);
+      setShowCheat(false);
+      setTimerReady(false);
+
+      setCanNext(false);
+      setQuestionNo(n=>n+1);
+      setNextFlash(true);
+      setTimeout(()=>setNextFlash(false), 250);
+
+      randomizeConjOptions();
+      reshufflePersons();
+
+      setPhase("question");
+    }
+
+    useEffect(()=>{ randomizeConjOptions(); }, []);
+    useEffect(()=>{ randomizeConjOptions(); }, [firstVerb, person]);
+    
+    // Initialize training item when switching to training modes
+    useEffect(() => {
+      if (currentQuestionMode !== "prepositions" && !trainItem) {
+        const item = pickNextTrainingItem(currentQuestionMode);
+        setTrainItem(item);
+      }
+    }, [currentQuestionMode, trainItem]);
+
+    const sentence = useMemo(
+      () => buildSentence(person, firstVerb, secondVerb),
+      [person, firstVerb, secondVerb]
+    );
+
+    function onSubmit() {
+      if (submitState !== "ready") return;
+
+      // TRAINING modes (not prepositions)
+      if (currentQuestionMode !== "prepositions") {
+        const item = trainItem;
+        if (!item) return;
+        let correct = false;
+        if (item.blanks === 1 || !item.blanks) correct = (selA === item.c1);
+        else correct = (selA === item.c1) && (selB === item.c2);
+
+        // If question is already locked (wrong answer given before)
+        if (questionLocked) {
+          if (correct) {
+            setSubmitState("lockedCorrect");
+            setShowAnswer(true);
+          }
+          return;
+        }
+
+        // First submission for this question
+        if (!correct) {
+          reviewQueue.current.push({ kind:"train", mode:currentQuestionMode, trainId:item.id, dueAt:questionNo+3 });
+          reviewQueue.current.push({ kind:"train", mode:currentQuestionMode, trainId:item.id, dueAt:questionNo+7 });
+        }
+
+        if (round===1) { if (correct) setSuccess1(n=>n+1); else setFail1(n=>n+1); }
+        else           { if (correct) setSuccess2(n=>n+1); else setFail2(n=>n+1); }
+
+        applyOutcomeWithAdvanced(correct);
+        setSubmitState(correct ? "correct" : "wrong");
+        setCanNext(true);
+        setPhase("outcome");
+        setQuestionLocked(true);
+        return;
+      }
+
+      // Prepositions mode
+      const p = PERSONS.find(x => x.label===person);
+      const correctConj = firstVerb.conj[p.idx];
+      const correctPrep = firstVerb.prep;
+      const isCorrect = (selectedConj===correctConj) && (selectedPrep===correctPrep);
+
+      if (questionLocked) {
+        if (isCorrect) {
+          setSubmitState("lockedCorrect");
+          setShowAnswer(true);
+        }
+        return;
+      }
+
+      if (!isCorrect && !sexMode) {
+        reviewQueue.current.push({ verbKey:firstVerb.key, person, dueAt:questionNo+3, mode:"same" });
+        reviewQueue.current.push({ verbKey:firstVerb.key, person, dueAt:questionNo+7, mode:"any" });
+      }
+
+      if (round===1) { if (isCorrect) setSuccess1(n=>n+1); else setFail1(n=>n+1); }
+      else           { if (isCorrect) setSuccess2(n=>n+1); else setFail2(n=>n+1); }
+
+      setPhase("answered");
+      applyOutcomeWithAdvanced(isCorrect);
+      setSubmitState(isCorrect ? "correct" : "wrong");
+      setCanNext(true);
+      setPhase("outcome");
+      setQuestionLocked(true);
+    }
+
+    function pickSide(available) {
+      const sides = [];
+      if (available.left) sides.push("left");
+      if (available.right) sides.push("right");
+      if (!sides.length) return null;
+      return rand(sides);
+    }
+    function singularItemLabel(key, side=null) {
+      if (key==="shoes")   return `${side? side+" ":""}shoe`;
+      if (key==="socks")   return `${side? side+" ":""}sock`;
+      if (key==="gloves")  return `${side? side+" ":""}glove`;
+      if (key==="earrings") return `one earring`;
+      return CLOTHES_LABELS[key];
+    }
+    function removeOneWithSides(inv, setInv, sidesState, setSidesState, whoName, whoPronoun) {
+      const priority = ["glasses","earrings","headgear","hairclips","watch","bracelet","ring","gloves","shoes","socks","jacket","sweater","tshirt","blouse","bra","pants","shorts","skirt","stockings","panties"];
+      const pool = priority.filter(k=>canRemove(inv,k));
+      if (!pool.length) return { text:`${whoName} has nothing removable.`, zoneKey:null, removed:false };
+
+      const key = rand(pool);
+      const invNew = clone(inv);
+      let sideUsed = null;
+
+      if (["shoes","socks","gloves","earrings"].includes(key)) {
+        const sides = sidesState[key];
+        sideUsed = pickSide(sides) || (Math.random()<.5?"left":"right");
+        invNew[key] = Math.max(0, (invNew[key]||0) - 1);
+        setInv(invNew);
+        setSidesState(prev => ({ ...prev, [key]: { ...prev[key], [sideUsed]: false }}));
+      } else {
+        invNew[key] = Math.max(0, (invNew[key]||0) - 1);
+        setInv(invNew);
+      }
+
+      const label = singularItemLabel(key, sideUsed);
+      return { text:`${whoName} removes ${whoPronoun} ${label}.`, zoneKey:`strip_${key}`, removed:true };
+    }
+
+    function enabledActionZones(groups, subs, inv, actionType, ZSET) {
+      const result = { soft:[], warm:[], spicy:[] };
+      for (const g of ["soft","warm","spicy"]) {
+        if (!groups[g]) continue;
+        for (const z of ZSET[g]) {
+          if (!subs[z.key]) continue;
+          if (zoneAllowedFor(inv, z, actionType)) result[g].push(z);
+        }
+      }
+      return result;
+    }
+    function chooseActionWeighted(correct) {
+      if (sexMode) return "sex_flow";
+
+      const base = advEff.actionWeights;
+      const entries = [];
+      // Переопределённые множители темпа (добавлен superfast)
+      const paceMap = { superfast: 2.25, fast: 1.5, normal: 1.0, slow: 0.7 };
+      const paceMult = paceMap[advEff.pace] ?? 1.0;
+
+      const herCnt = countByCategory(herInv).total;
+      const youCnt = countByCategory(youInv).total;
+      let stripMult = paceMult;
+      if (advEff.balanceClothes) {
+        const diff = youCnt - herCnt;
+        if (correct) {
+          if (diff > advEff.balanceMaxDiff) stripMult *= 1.5;
+          if (diff < -advEff.balanceMaxDiff) stripMult *= 0.75;
+        } else {
+          if (-diff > advEff.balanceMaxDiff) stripMult *= 1.5;
+          if (-diff < -advEff.balanceMaxDiff) stripMult *= 0.75;
+        }
+      }
+
+      function addIfEnabled(name, weight) {
+        let enabled = true;
+        if (name === "kiss" && !includeKiss) enabled = false;
+        if (name === "massage" && !includeMassage) enabled = false;
+        if (name === "bite" && !includeBite) enabled = false;
+        if (name === "strip" && !includeStrip) enabled = false;
+        if (name === "masturbate") {
+          const targetInv = correct ? herInv : youInv;
+          if (!includeMasturbate || hasPanties(targetInv)) enabled = false;
+        }
+        if (!enabled) return;
+
+        const oc = outcomeCounts.current[name] || 0;
+        const rareBoost = 1 / (oc + 1);
+        let w = (base[name] || 0) * rareBoost;
+        if (name === "strip") w *= stripMult;
+        if (advEff.antiRepeatAction && lastActions.current.includes(name)) w *= 0.2;
+        if (w > 0) entries.push({ item: name, weight: w });
+      }
+
+      addIfEnabled("kiss", base.kiss);
+      addIfEnabled("massage", base.massage);
+      addIfEnabled("bite", base.bite);
+      addIfEnabled("strip", base.strip);
+      addIfEnabled("masturbate", base.masturbate || 0.15);
+
+      if (round === 2 && !sexMode) {
+        const entry = entries.find(e => e.item === "strip");
+        if (entry) entry.weight *= 1.7;
+      }
+
+      if (!entries.length) return null;
+      const pick = weightedPick(entries.map(e => ({ item: e.item, weight: e.weight })));
+      return pick || null;
+    }
+
+    function tryPickAction(correct) {
+      const tried = new Set();
+      for (let attempts=0; attempts<8; attempts++) {
+        const action = chooseActionWeighted(correct);
+        if (!action) return null;
+        if (tried.has(action)) break;
+        tried.add(action);
+
+        if (action === 'strip') {
+          const pool = ["glasses","earrings","headgear","hairclips","watch","bracelet","ring","gloves","shoes","socks","jacket","sweater","tshirt","blouse","bra","pants","shorts","skirt","stockings","panties"].filter(k=> canRemove((correct? youInv:herInv), k));
+          if (pool.length) return action;
+          else continue;
+        }
+
+        if (action === 'masturbate') {
+          const targetInv = correct ? herInv : youInv;
+          if (!includeMasturbate || hasPanties(targetInv)) continue;
+          return action;
+        }
+
+        if (action === 'kiss' || action === 'bite' || action === 'massage') {
+          const ZSET = action==='massage'? MASSAGE_ZONES : KISS_ZONES;
+          const groups = action==='massage'? groupsM : groupsK;
+          const subs = action==='massage'? subsM : subsK;
+          const avail = enabledActionZones(groups, subs, (correct? herInv: youInv), action==='bite'? 'bite' : action, ZSET);
+          const total = (avail.soft||[]).length + (avail.warm||[]).length + (avail.spicy||[]).length;
+          if (total>0) return action;
+          else continue;
+        }
+        return action;
+      }
+      return null;
+    }
+
+    function chooseZoneWeighted(type, receiverInv) {
+      const ZSET   = (type==="massage") ? MASSAGE_ZONES : KISS_ZONES;
+      const groups = (type==="massage") ? groupsM       : groupsK;
+      const subs   = (type==="massage") ? subsM         : subsK;
+
+      const avail = enabledActionZones(groups, subs, receiverInv, type==="bite" ? "bite" : type, ZSET);
+      const countAll = (g) => (avail[g] || []).length;
+
+      const totalCount = countAll("soft") + countAll("warm") + countAll("spicy");
+      if (!totalCount) return null;
+
+      const herInit = countByCategory(initHerInv).total;
+      const youInit = countByCategory(initYouInv).total;
+      const herCur  = countByCategory(herInv).total;
+      const youCur  = countByCategory(youInv).total;
+      const progress = 1 - ((herCur + youCur) / (herInit + youInit));
+
+      let weightsGroup;
+      if (progress < 0.2)      weightsGroup = { soft: 1.0, warm:  0.0, spicy: 0.0 };
+      else if (progress < 0.7) weightsGroup = { soft: 0.6, warm:  0.4, spicy: 0.0 };
+      else if (progress < 0.9) weightsGroup = { soft: 0.2, warm:  0.6, spicy: 0.2 };
+      else                     weightsGroup = { soft: 0.1, warm:  0.3, spicy: 0.6 };
+
+      const entries = [
+        { item: "soft",  weight: weightsGroup.soft  * Math.max(1, countAll("soft"))  },
+        { item: "warm",  weight: weightsGroup.warm  * Math.max(1, countAll("warm"))  },
+        { item: "spicy", weight: weightsGroup.spicy * Math.max(1, countAll("spicy")) },
+      ];
+
+      let group = weightedPick(entries) || (countAll("soft") ? "soft" : countAll("warm") ? "warm" : "spicy");
+      let zones = (avail[group] || []).slice();
+
+      const last = lastZones.current[lastZones.current.length - 1];
+      if (advEff.antiRepeatZone && lastZones.current.length) {
+        const filtered = zones.filter(z => !lastZones.current.includes(z.key));
+        zones = filtered.length ? filtered : zones.filter(z => z.key !== last);
+      }
+
+      if (!zones.length) {
+        let all = []
+          .concat(avail.soft  || [])
+          .concat(avail.warm  || [])
+          .concat(avail.spicy || []);
+
+        if (advEff.antiRepeatZone && lastZones.current.length) {
+          const filteredAll = all.filter(z => !lastZones.current.includes(z.key));
+          all = filteredAll.length ? filteredAll : all.filter(z => z.key !== last);
+        }
+        zones = all;
+      }
+
+      if (!zones.length) return null;
+
+      const zoneEntries = zones.map(z => ({ item: z, weight: 1 / ((zoneCounts.current[z.key] || 0) + 1) }));
+      const chosen = weightedPick(zoneEntries.map(e => ({ item: e.item, weight: e.weight }))) || rand(zones);
+      return chosen;
+    }
+
+    function numberWordIfTwo(n) {
+      return n===2 ? "two" : String(n);
+    }
+
+    function pickSexPositionNoRepeat(type) {
+      const set = sexUsedVariants.current;
+      if (type.startsWith("riding")) {
+        const opt = type==="riding_face_him" ? "riding_face_him" : "riding_face_legs";
+        if (!set.has(opt)) { set.add(opt); return opt; }
+        return opt;
+      }
+      const left = sexPositions.filter(p => !set.has("penetration_"+p));
+      const chosen = left.length ? rand(left) : rand(sexPositions);
+      set.add("penetration_"+chosen);
+      return chosen;
+    }
+
+    function applyOutcomeWithAdvanced(correct) {
+      if (sexMode) {
+        let text = "", durationSec = null;
+        if (sexPhase === 'warmup') {
+          durationSec = 60;
+          text = `(Sex) — Warm-up oil applied (${Math.floor(durationSec/60)} min).`;
+          setSexPhase('mutual_masturbation');
+        } else if (sexPhase === 'mutual_masturbation') {
+          if (!(masturbatedHerOnce && masturbatedHimOnce)) {
+            const dur = rand([180,240]);
+            durationSec = dur;
+            if (correct) {
+              text = `Eugene masturbates Göknur for ${Math.floor(dur/60)} minutes.`;
+              setMasturbatedHerOnce(true);
+            } else {
+              text = `Göknur masturbates Eugene for ${Math.floor(dur/60)} minutes.`;
+              setMasturbatedHimOnce(true);
+            }
+            if (masturbatedHerOnce && masturbatedHimOnce) setSexPhase('penetration_flow');
+          } else {
+            setSexPhase('penetration_flow');
+            const dur = rand([120,180,240]);
+            durationSec = dur;
+            const pos = pickSexPositionNoRepeat('penetration');
+            if (correct) {
+              text = `(Sex) — Eugene penetrates Göknur for ${Math.floor(dur/60)} minutes ${pos}.`;
+            } else {
+              const face = Math.random()<.5 ? 'facing to him' : 'facing to the legs';
+              const key = face==='facing to him' ? 'riding_face_him' : 'riding_face_legs';
+              pickSexPositionNoRepeat(key);
+              text = `(Sex) — Göknur makes horse riding on Eugene (${face}) for ${Math.floor(dur/60)} minutes.`;
+            }
+            setSexActsCount(n=> {
+              const next = n+1;
+              if (next>=3 && correct) setSexReadyToFinish(true);
+              return next;
+            });
+          }
+        } else if (sexPhase === 'penetration_flow') {
+          const dur = rand([120,180,240]);
+          durationSec = dur;
+          const pos = pickSexPositionNoRepeat('penetration');
+          if (correct) {
+            text = `(Sex) — Eugene penetrates Göknur for ${Math.floor(dur/60)} minutes ${pos}.`;
+          } else {
+            const face = Math.random()<.5 ? 'facing to him' : 'facing to the legs';
+            const key = face==='facing to him' ? 'riding_face_him' : 'riding_face_legs';
+            pickSexPositionNoRepeat(key);
+            text = `(Sex) — Göknur makes horse riding on Eugene (${face}) for ${Math.floor(dur/60)} minutes.`;
+          }
+          setSexActsCount(n=>{
+            const next = n+1;
+            if (next>=3 && correct) setSexReadyToFinish(true);
+            return next;
+          });
+        }
+        setLastOutcome(text);
+        setLastOutcomeDur(durationSec);
+        setLastAction('sex_flow');
+        setLastZoneKey(null);
+        setTimerReady(!!durationSec);
+        return;
+      }
+
+      const giverName = correct ? "Eugene" : "Göknur";
+      const receiverName = correct ? "Göknur" : "Eugene";
+      const receiverInv = correct ? herInv : youInv;
+
+      const bothPanties = hasPanties(herInv) && hasPanties(youInv);
+
+      let action = null;
+      if (finishMode && includeStrip) {
+        action = "strip";
+      }
+      if (!action) {
+        action = tryPickAction(correct);
+      }
+      if (!action) {
+        setLastOutcome("No available actions (disabled in Settings or blocked by clothing/zones). Adjust Settings or clothing.");
+        setLastOutcomeDur(null);
+        setLastAction(null);
+        setLastZoneKey(null);
+        setTimerReady(false);
+        return;
+      }
+
+      if (action!=="strip" && correct && bothPanties && Math.random()<0.28) {
+        action = "horse_over";
+      }
+
+      let text = "", zoneUsed = null, durationSec = null;
+      if (action==="strip") {
+        if (correct) {
+          const { text:t, removed, zoneKey } = removeOneWithSides(youInv, setYouInv, youSides, setYouSides, "Eugene", "his");
+          if (removed) setRemovedYou(n=>n+1);
+          text = t; zoneUsed = zoneKey;
+        } else {
+          const { text:t, removed, zoneKey } = removeOneWithSides(herInv, setHerInv, herSides, setHerSides, "Göknur", "her");
+          if (removed) setRemovedHer(n=>n+1);
+          text = t; zoneUsed = zoneKey;
+        }
+      } else if (action==="kiss") {
+        const z = chooseZoneWeighted("kiss", receiverInv);
+        if (!z) {
+          setLastOutcome("No allowed kiss zones.");
+          setLastAction("kiss");
+          setLastZoneKey(null);
+          return;
+        }
+        else {
+          zoneUsed = z.key;
+          const g = z.group;
+          if (giverName==="Göknur") setKissGivenHer(s=>({ ...s, [g]: s[g]+1 }));
+          else setKissGivenYou(s=>({ ...s, [g]: s[g]+1 }));
+
+          if (g==="soft") {
+            const n = Math.floor(Math.random()*5)+2;
+            const base = `${giverName} gives ${receiverName} ${numberWordIfTwo(n)} quick ${n===1?"kiss":"kisses"}`;
+            const place = (z.key.startsWith("lips")) ? "on the lips" : `on the ${z.label}`;
+            text = `${base} ${place}.`;
+          } else if (g==="warm") {
+            const secsArr = [5,10,15,20,30];
+            const secs = rand(secsArr);
+            durationSec = secs;
+            if (z.key==="lips_warm") {
+              const whichLip = Math.random()<.5 ? "upper lip" : "lower lip";
+              text = `${giverName} gives ${receiverName} a long kiss (${secs}s) on the ${whichLip}.`;
+            } else {
+              text = `${giverName} gives ${receiverName} a long kiss (${secs}s) on the ${z.label}.`;
+            }
+          } else {
+            const secsArr = [5,10,15,20,30];
+            const secs = rand(secsArr);
+            durationSec = secs;
+            const holds = ["face","head","hip","butt"]; const hold = rand(holds);
+            const where = (z.key!=="lips_spicy") ? ` (on the ${z.label})` : "";
+            text = `${giverName} gives ${receiverName} a French kiss (${secs}s) holding the ${hold}${where}.`;
+          }
+        }
+      } else if (action==="bite") {
+        const z = chooseZoneWeighted("bite", receiverInv);
+        if (!z) {
+          setLastOutcome("No allowed bite zones.");
+          setLastAction("bite");
+          setLastZoneKey(null);
+          return;
+        }
+        else {
+          zoneUsed = z.key;
+          const variants = ["gentle bite","soft bite","playful bite"];
+          const v = rand(variants);
+          if (z.key.startsWith("lips_")) {
+            const whichLip = Math.random()<.5 ? "upper lip" : "lower lip";
+            text = `${giverName} gives ${receiverName} a ${v} on the ${whichLip}.`;
+          } else {
+            text = `${giverName} gives ${receiverName} a ${v} on the ${z.label}.`;
+          }
+        }
+      } else if (action==="massage") {
+        let z = chooseZoneWeighted("massage", receiverInv);
+        if (!z) {
+          setLastOutcome("No allowed massage zones.");
+          setLastAction("massage");
+          setLastZoneKey(null);
+          return;
+        }
+        else {
+          if (z.key==="balls_m") {
+            if (!(receiverName==="Eugene" && !hasPanties(youInv) && !correct)) {
+              z = chooseZoneWeighted("massage", receiverInv) || z;
+            }
+          }
+          zoneUsed = z.key;
+          const g = z.group;
+          const choices = z.key==="asshole_m" ? [60,120] : [30, 60, 120];
+          const secs = rand(choices);
+          durationSec = secs;
+          if (giverName==="Göknur") setMassGivenHer(s=>({ ...s, [g]: s[g]+1 }));
+          else setMassGivenYou(s=>({ ...s, [g]: s[g]+1 }));
+
+          if (z.key==="asshole_m") {
+            const mins = Math.floor(secs/60);
+            if (!correct && receiverName==="Eugene") {
+              text = `Göknur massages Eugene's asshole for ${mins} minute${mins>1?"s":""}.`;
+            } else {
+              text = `${giverName} massages ${receiverName}'s asshole for ${mins} minute${mins>1?"s":""}.`;
+            }
+          } else if (z.key==="balls_m") {
+            const mins = Math.floor(secs/60)||1;
+            text = `Göknur massages Eugene's balls for ${mins} minute${mins>1?"s":""}.`;
+          } else {
+            text = `${giverName} gives ${receiverName} a massage (${secs}s) on the ${z.label}.`;
+            if (z.key==="butt_m") {
+              const slaps = Math.floor(Math.random()*6);
+              const slapGiver = giverName==="Göknur" ? "Eugene" : "Göknur";
+              if (slaps>0) text += ` ${slaps} playful ${slaps===1?"slap":"slaps"} on the butt by ${slapGiver}.`;
+            }
+          }
+        }
+      } else if (action==="masturbate") {
+        const targetInv = correct ? herInv : youInv;
+        if (hasPanties(targetInv)) {
+          setLastOutcome("Masturbation unavailable (underwear)." );
+          setLastAction("masturbate");
+          setLastZoneKey(null);
+          return;
+        }
+        const pace = rand(["very fast pace","medium pace","slow pace"]);
+        const mins = rand([1,2]);
+        durationSec = mins*60;
+        if (correct) {
+          text = `Eugene masturbates Göknur, ${pace} ${mins} minute${mins>1?"s":""}.`;
+        } else {
+          text = `Göknur masturbates Eugene, ${pace} ${mins} minute${mins>1?"s":""}.`;
+        }
+      } else if (action==="horse_over") {
+        const mins = rand([1,2]);
+        durationSec = mins*60;
+        text = `Göknur makes horse riding over clothes for ${mins} minute${mins>1?"s":""}.`;
+      }
+      setLastOutcome(text);
+      setLastOutcomeDur(durationSec);
+      setLastAction(action);
+      setLastZoneKey(zoneUsed);
+
+      outcomeCounts.current[action] = (outcomeCounts.current[action] || 0) + 1;
+      if (zoneUsed) {
+        zoneCounts.current[zoneUsed] = (zoneCounts.current[zoneUsed] || 0) + 1;
+      }
+      lastActions.current.push(action);
+      if (lastActions.current.length > ACTION_HISTORY_SIZE) lastActions.current.shift();
+      if (zoneUsed) {
+        lastZones.current.push(zoneUsed);
+        if (lastZones.current.length > ZONE_HISTORY_SIZE) lastZones.current.shift();
+      }
+
+      setTimerReady(!!durationSec);
+    }
+
+    function endRoundPrompt(winner, lastCorrect) {
+      const s1 = success1 + (round===1 ? (lastCorrect?1:0) : 0);
+      const f1 = fail1 + (round===1 ? (lastCorrect?0:1) : 0);
+      const s2 = success2 + (round===2 ? (lastCorrect?1:0) : 0);
+      const f2 = fail2 + (round===2 ? (lastCorrect?0:1) : 0);
+
+      const herInit = countByCategory(initHerInv);
+      const youInit = countByCategory(initYouInv);
+      const herCur  = countByCategory(herInv);
+      const youCur  = countByCategory(youInv);
+
+      const linesRound1 = `Round 1 — Correct: ${s1} · Wrong: ${f1}`;
+      const linesRound2 = `Round 2 — Correct: ${s2} · Wrong: ${f2}`;
+      const totalLines  = `Total — Correct: ${s1+s2} · Wrong: ${f1+f2}`;
+
+      let stats = "";
+      stats += `Göknur:\n`;
+      stats += `${herInit.head-herCur.head}/${herInit.head} head removed\n`;
+      stats += `${herInit.upper-herCur.upper}/${herInit.upper} upper body removed\n`;
+      stats += `${herInit.lower-herCur.lower}/${herInit.lower} lower body removed\n`;
+      stats += `${herInit.feet-herCur.feet}/${herInit.feet} feet removed\n`;
+      stats += `kisses:\n  ${kissGivenHer.soft} soft\n  ${kissGivenHer.warm} warm\n  ${kissGivenHer.spicy} spicy\n`;
+      stats += `massage:\n  ${massGivenHer.soft} soft\n  ${massGivenHer.warm} warm\n  ${massGivenHer.spicy} spicy\n\n`;
+      stats += `Eugene:\n`;
+      stats += `${youInit.head-youCur.head}/${youInit.head} head removed\n`;
+      stats += `${youInit.upper-youCur.upper}/${youInit.upper} upper body removed\n`;
+      stats += `${youInit.lower-youCur.lower}/${youInit.lower} lower body removed\n`;
+      stats += `${youInit.feet-youCur.feet}/${youInit.feet} feet removed\n`;
+      stats += `kisses:\n  ${kissGivenYou.soft} soft\n  ${kissGivenYou.warm} warm\n  ${kissGivenYou.spicy} spicy\n`;
+      stats += `massage:\n  ${massGivenYou.soft} soft\n  ${massGivenYou.warm} warm\n  ${massGivenYou.spicy} spicy`;
+
+      const bothNaked = (countByCategory(herInv).total===0) && (countByCategory(youInv).total===0);
+
+      const roundMsg = `Round ${round} finished — Winner: ${winner}.`;
+      const defaultMsg = round===1
+        ? `${roundMsg}\n${linesRound1}\n\n${stats}\n\nContinue to finish (strip the other to zero)?`
+        : `${roundMsg}\n${linesRound1}\n${linesRound2}\n${totalLines}\n\n${stats}\n\nPlay again?`;
+
+      if (bothNaked && sexEnabled && round===2 && !sexMode) {
+        setSexUnlockMsg("You are both naked! Sex mode unlocked! Göknur, apply oil on Eugene to warm him up.");
+        setShowSexUnlock(true);
+        return;
+      }
+
+      setEndMessage(defaultMsg);
+      setShowEndModal(true);
+    }
+    function proceedAfterEnd(yes) {
+      setShowEndModal(false);
+      if (round===1) {
+        if (yes) { setRound(2); setFinishMode(true); setQuestionNo(n=>n+1); }
+      } else {
+        if (yes) restartGame(true);
+      }
+    }
+    function restartGame(skipAsk=false) {
+      if (!skipAsk) { setShowRestart(true); return; }
+      setHerInv(clone(savedHerDefault)); setYouInv(clone(savedYouDefault));
+      setInitHerInv(clone(savedHerDefault)); setInitYouInv(clone(savedYouDefault));
+      resetSidesFromInventories(savedHerDefault, setHerSides);
+      resetSidesFromInventories(savedYouDefault, setYouSides);
+
+      setRound(1); setFinishMode(false);
+      setQuestionNo(1);
+      setSuccess1(0); setFail1(0); setSuccess2(0); setFail2(0);
+      setRemovedHer(0); setRemovedYou(0);
+      setKissGivenHer(clone({soft:0,warm:0,spicy:0}));
+      setKissGivenYou(clone({soft:0,warm:0,spicy:0}));
+      setMassGivenHer(clone({soft:0,warm:0,spicy:0}));
+      setMassGivenYou(clone({soft:0,warm:0,spicy:0}));
+      setLastOutcome(null); setShowAnswer(false); setLastOutcomeDur(null);
+      setEndMessage(""); setShowEndModal(false);
+      setSelectedConj("inf"); setSelectedPrep(null); setSubmitState("idle"); setCanNext(false);
+      usedFirst.current = new Set(); usedSecond.current = new Set();
+      prepCounts.current = {de:0,a:0,em:0,none:0};
+      reviewQueue.current = [];
+      setLastAction(null); setLastZoneKey(null);
+      setTimerOpen(false); setTimerReady(false); if (timerId.current) { clearInterval(timerId.current); timerId.current=null; }
+
+      // reset Sex mode variables
+      setSexMode(false);
+      setSexActsCount(0);
+      setSexReadyToFinish(false);
+      sexUsedVariants.current = new Set();
+      setSexPendingIntercourse(false);
+      setMasturbatedHerOnce(false);
+      setMasturbatedHimOnce(false);
+      setShowCumModal(false);
+      setShowSexUnlock(false);
+      setCumFinalPos(null);
+
+      try { stopwatchRef.current?.setElapsed(0); } catch(e){}
+      setElapsedUserPaused(false);
+      try { stopwatchRef.current?.resume(); } catch(e){}
+
+      const allF = firstVerbPoolAll(); const allS = secondVerbPoolAll();
+      setPerson(rand(PERSONS).label);
+      setFirstVerb(rand(allF));
+      setSecondVerb(rand(allS));
+      randomizeConjOptions();
+      reshufflePersons();
+    }
+    function resetSidesFromInventories(invSource, setter) {
+      setter({
+        shoes:    {left:(invSource.shoes||0)>=1, right:(invSource.shoes||0)>=2},
+        socks:    {left:(invSource.socks||0)>=1, right:(invSource.socks||0)>=2},
+        gloves:   {left:(invSource.gloves||0)>=1, right:(invSource.gloves||0)>=2},
+        earrings: {left:(invSource.earrings||0)>=1, right:(invSource.earrings||0)>=2},
+      });
+    }
+
+    function setDefaultsNow() {
+      setSavedHerDefault(clone(herInv));
+      setSavedYouDefault(clone(youInv));
+      setInitHerInv(clone(herInv));
+      setInitYouInv(clone(youInv));
+      resetSidesFromInventories(herInv, setHerSides);
+      resetSidesFromInventories(youInv, setYouSides);
+    }
+    function applySavedDefaults() {
+      setHerInv(clone(savedHerDefault));
+      setYouInv(clone(savedYouDefault));
+      setInitHerInv(clone(savedHerDefault));
+      setInitYouInv(clone(savedYouDefault));
+      resetSidesFromInventories(savedHerDefault, setHerSides);
+      resetSidesFromInventories(savedYouDefault, setYouSides);
+    }
+    function zeroAll() {
+      const z = {}; Object.keys(CLOTHES_LABELS).forEach(k=>z[k]=0);
+      setHerInv(clone(z)); setYouInv(clone(z));
+      setInitHerInv(clone(z)); setInitYouInv(clone(z));
+      resetSidesFromInventories(z, setHerSides);
+      resetSidesFromInventories(z, setYouSides);
+    }
+
+    // ---------- AUTOSAVE ----------
+    const fileHandleRef = useRef(null);
+    const autosavePauseUntilRef = useRef(0);
+    const pauseAutosave = (ms=1500) => {
+      autosavePauseUntilRef.current = Math.max(autosavePauseUntilRef.current, Date.now()+ms);
+    };
+    useEffect(()=>{
+      const onPointerDown = () => pauseAutosave(1200);
+      const onFocusIn = (e) => { if (e.target && e.target.tagName === 'SELECT') pauseAutosave(2000); };
+      document.addEventListener('pointerdown', onPointerDown, true);
+      document.addEventListener('focusin', onFocusIn, true);
+      return () => {
+        document.removeEventListener('pointerdown', onPointerDown, true);
+        document.removeEventListener('focusin', onFocusIn, true);
+      };
+    }, []);
+
+    const fileWriteBusyRef = useRef(false);
+    const filePendingStateRef = useRef(null);
+
+    async function _writeStateToFileNow(state) {
+      try {
+        const writable = await fileHandleRef.current.createWritable();
+        await writable.write(new Blob([JSON.stringify(state,null,2)], {type:"application/json"}));
+        await writable.close();
+      } catch (e) { console.log(e); }
+    }
+    function queueFileWrite(state) {
+      if (!fileHandleRef.current) return;
+      filePendingStateRef.current = state;
+      if (fileWriteBusyRef.current) return;
+      if (Date.now() < autosavePauseUntilRef.current) return;
+
+      fileWriteBusyRef.current = true;
+      const toWrite = filePendingStateRef.current;
+      filePendingStateRef.current = null;
+      _writeStateToFileNow(toWrite).finally(()=>{
+        fileWriteBusyRef.current = false;
+        if (filePendingStateRef.current && Date.now() >= autosavePauseUntilRef.current) {
+          queueFileWrite(filePendingStateRef.current);
+        }
+      });
+    }
+
+    async function enableFileAutosave() {
+      if (!window.showSaveFilePicker) { alert("File autosave is not supported in this browser. Local autosave will still work."); return; }
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: "ppp-save.json",
+          types: [{ description:"JSON", accept: {"application/json":[".json"]} }]
+        });
+        fileHandleRef.current = handle;
+        const state = packState();
+        queueFileWrite(state);
+        alert("File autosave enabled.");
+      } catch (e) {
+        console.log(e);
+      }
+    }
+    function disableFileAutosave() { fileHandleRef.current = null; alert("File autosave disabled."); }
+
+    const doAutosave = makeThrottle(() => {
+      if (Date.now() < autosavePauseUntilRef.current) return;
+      const state = packState();
+      try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch(e){}
+      queueFileWrite(state);
+    }, 250);
+
+    // Ref to always have access to latest packState function
+    const packStateRef = useRef(null);
+
+    function packState() {
+      return {
+        currentQuestionMode,
+        enabledModes,
+        prepsAllowed, useFirstList1, useFirstList2, useSecondList1, useSecondList2,
+        includeStrip, includeKiss, includeBite, includeMassage, includeMasturbate,
+        groupsK, groupsM, subsK, subsM,
+        herInv, youInv, initHerInv, initYouInv, savedHerDefault, savedYouDefault,
+        herSides, youSides,
+        questionNo, round, success1, fail1, success2, fail2, finishMode,
+        removedHer, removedYou, kissGivenHer, kissGivenYou, massGivenHer, massGivenYou,
+        person, firstVerbKey:firstVerb.key, secondVerbPt:secondVerb.pt,
+        advPending, advEff,
+
+        // Current game state - to resume exactly where left off
+        selectedConj, selectedPrep,
+        selA, selB,
+        submitState: (submitState === "ready" ? "idle" : submitState), // Reset ready to idle on load
+        questionLocked,
+        canNext,
+        lastOutcome, lastOutcomeDur,
+        showAnswer, showCheat,
+        phase,
+        lastAction, lastZoneKey,
+        trainItem: trainItem ? { ...trainItem } : null,
+
+        // sex
+        sexEnabled, sexMode, sexPhase,
+        sexActsCount, sexReadyToFinish,
+        sexUsedVariants: Array.from(sexUsedVariants.current),
+        sexPendingIntercourse, masturbatedHerOnce, masturbatedHimOnce,
+
+        // queues & counts
+        usedFirst: Array.from(usedFirst.current), usedSecond: Array.from(usedSecond.current),
+        usedTrainIds: Array.from(usedTrainIds.current),
+        prepCounts: prepCounts.current,
+        reviewQueue: reviewQueue.current,
+
+        // timers & runtime
+        elapsedMs: (()=>{ try{return stopwatchRef.current?.getElapsed()||0;}catch(e){return 0;} })(),
+        elapsedUserPaused,
+        outcomeCounts: outcomeCounts.current,
+        zoneCounts: zoneCounts.current,
+        lastActions: lastActions.current,
+        lastZones: lastZones.current,
+        
+        // Save timestamp
+        savedAt: Date.now()
+      };
+    }
+    // Keep packStateRef updated with latest function
+    packStateRef.current = packState;
+    
+    function restoreState(s) {
+      try {
+        setCurrentQuestionMode(s.currentQuestionMode ?? "prepositions");
+        setEnabledModes(s.enabledModes ?? { prepositions:true });
+
+        setPrepsAllowed({ de:true, a:true, em:true, none:true });
+        setUseFirstList1(true); setUseFirstList2(true);
+        setUseSecondList1(true); setUseSecondList2(true);
+        setIncludeStrip(s.includeStrip !== false); setIncludeKiss(s.includeKiss !== false); setIncludeBite(!!s.includeBite); setIncludeMassage(s.includeMassage !== false);
+        setIncludeMasturbate(s.includeMasturbate !== false);
+        setGroupsK(s.groupsK ?? groupsK); setGroupsM(s.groupsM ?? groupsM);
+        setSubsK(s.subsK ?? subsK); setSubsM(s.subsM ?? subsM);
+        setHerInv(s.herInv ?? herInv); setYouInv(s.youInv ?? youInv);
+        setInitHerInv(s.initHerInv ?? initHerInv); setInitYouInv(s.initYouInv ?? initYouInv);
+        setSavedHerDefault(s.savedHerDefault ?? savedHerDefault); setSavedYouDefault(s.savedYouDefault ?? savedYouDefault);
+        setHerSides(s.herSides ?? herSides); setYouSides(s.youSides ?? youSides);
+
+        setQuestionNo(s.questionNo ?? 1);
+        setRound(s.round ?? 1);
+        setSuccess1(s.success1 ?? 0); setFail1(s.fail1 ?? 0);
+        setSuccess2(s.success2 ?? 0); setFail2(s.fail2 ?? 0);
+        setFinishMode(!!s.finishMode);
+
+        setRemovedHer(s.removedHer ?? 0); setRemovedYou(s.removedYou ?? 0);
+        setKissGivenHer(s.kissGivenHer ?? zeroSW);
+        setKissGivenYou(s.kissGivenYou ?? zeroSW);
+        setMassGivenHer(s.massGivenHer ?? zeroSW);
+        setMassGivenYou(s.massGivenYou ?? zeroSW);
+
+        const fPool = firstVerbPoolAll();
+        const sPool = secondVerbPoolAll();
+        const f = fPool.find(v=>v.key===s.firstVerbKey) || rand(fPool);
+        const sec = sPool.find(v=>v.pt===s.secondVerbPt) || rand(sPool);
+        setFirstVerb(f);
+        setSecondVerb(sec);
+        setPerson(s.person ?? person);
+
+        setAdvPending(s.advPending ?? ADV_DEFAULT);
+        setAdvEff(s.advEff ?? ADV_DEFAULT);
+
+        // Restore current game state
+        setSelectedConj(s.selectedConj ?? "inf");
+        setSelectedPrep(s.selectedPrep ?? null);
+        setSelA(s.selA ?? null);
+        setSelB(s.selB ?? null);
+        setSubmitState(s.submitState ?? "idle");
+        setQuestionLocked(!!s.questionLocked);
+        setCanNext(!!s.canNext);
+        setLastOutcome(s.lastOutcome ?? null);
+        setLastOutcomeDur(s.lastOutcomeDur ?? null);
+        setShowAnswer(!!s.showAnswer);
+        setShowCheat(!!s.showCheat);
+        setPhase(s.phase ?? "question");
+        setLastAction(s.lastAction ?? null);
+        setLastZoneKey(s.lastZoneKey ?? null);
+        if (s.trainItem) setTrainItem(s.trainItem);
+
+        usedFirst.current = new Set(s.usedFirst || []);
+        usedSecond.current = new Set(s.usedSecond || []);
+        usedTrainIds.current = new Set(s.usedTrainIds || []);
+        prepCounts.current = s.prepCounts || {de:0,a:0,em:0,none:0};
+        reviewQueue.current = s.reviewQueue || [];
+
+        setSexEnabled(!!s.sexEnabled);
+        setSexMode(!!s.sexMode);
+        setSexPhase(s.sexPhase ?? 'warmup');
+        setSexActsCount(s.sexActsCount ?? 0);
+        setSexReadyToFinish(!!s.sexReadyToFinish);
+        sexUsedVariants.current = new Set(s.sexUsedVariants || []);
+        setSexPendingIntercourse(!!s.sexPendingIntercourse);
+        setMasturbatedHerOnce(!!s.masturbatedHerOnce);
+        setMasturbatedHimOnce(!!s.masturbatedHimOnce);
+
+        randomizeConjOptions();
+        reshufflePersons();
+
+        setElapsedUserPaused(!!s.elapsedUserPaused);
+        setTimeout(() => {
+          try {
+            stopwatchRef.current?.setElapsed(s.elapsedMs || 0);
+            if (s.elapsedUserPaused) stopwatchRef.current?.pause();
+            else stopwatchRef.current?.resume();
+          } catch(e){ console.log("Timer restore error:", e); }
+        }, 500);
+        setTimeout(() => {
+          try {
+            if (stopwatchRef.current) {
+              stopwatchRef.current.setElapsed(s.elapsedMs || 0);
+              if (s.elapsedUserPaused) stopwatchRef.current.pause();
+            }
+          } catch(e){}
+        }, 1000);
+
+        if (s.outcomeCounts) outcomeCounts.current = s.outcomeCounts;
+        if (s.zoneCounts) zoneCounts.current = s.zoneCounts;
+        if (s.lastActions) lastActions.current = s.lastActions;
+        if (s.lastZones) lastZones.current = s.lastZones;
+      } catch (e) {
+        console.log("Failed to restore:", e);
+      }
+    }
+    useEffect(()=>{
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (raw) {
+        try { restoreState(JSON.parse(raw)); } catch(e){ console.log(e); }
+      } else {
+        resetSidesFromInventories(herInv, setHerSides);
+        resetSidesFromInventories(youInv, setYouSides);
+      }
+      
+      // Save on window close/refresh - use ref to get latest state
+      const handleBeforeUnload = () => {
+        if (packStateRef.current) {
+          const state = packStateRef.current();
+          try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch(e){}
+        }
+      };
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'hidden' && packStateRef.current) {
+          const state = packStateRef.current();
+          try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch(e){}
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      
+      const periodicSaveInterval = setInterval(() => {
+        if (packStateRef.current) {
+          const state = packStateRef.current();
+          try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch(e){}
+        }
+      }, 1000);
+      
+      return () => {
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        clearInterval(periodicSaveInterval);
+      };
+    }, []);
+
+    useEffect(()=>{ doAutosave(); }, [
+      currentQuestionMode, enabledModes,
+      prepsAllowed, useFirstList1, useFirstList2, useSecondList1, useSecondList2,
+      includeStrip, includeKiss, includeBite, includeMassage, includeMasturbate,
+      groupsK, groupsM, subsK, subsM,
+      herInv, youInv, initHerInv, initYouInv, savedHerDefault, savedYouDefault,
+      herSides, youSides,
+      questionNo, round, success1, fail1, success2, fail2, finishMode,
+      removedHer, removedYou, kissGivenHer, kissGivenYou, massGivenHer, massGivenYou,
+      person, firstVerb, secondVerb,
+      advPending, advEff,
+      // Current game state
+      selectedConj, selectedPrep, selA, selB, submitState, questionLocked,
+      canNext, lastOutcome, lastOutcomeDur, showAnswer, showCheat, phase,
+      lastAction, lastZoneKey, trainItem,
+      // Sex mode
+      sexEnabled, sexMode, sexPhase, sexActsCount, sexReadyToFinish, sexPendingIntercourse,
+      masturbatedHerOnce, masturbatedHimOnce,
+      elapsedUserPaused
+    ]);
+
+    // ---------- Прогноз шагов ----------
+    function getNormalizedWeightsFromPending() {
+      const w = clone(advPending.actionWeights || {});
+      const keys = ["kiss","massage","strip","bite","masturbate"];
+      for (const k of keys) w[k] = Math.max(0, Number(w[k]||0));
+
+      if (!includeKiss) w.kiss = 0;
+      if (!includeMassage) w.massage = 0;
+      if (!includeBite) w.bite = 0;
+      if (!includeStrip) w.strip = 0;
+
+      const mastEnabled = includeMasturbate && !hasPanties(herInv) && !hasPanties(youInv);
+      if (!mastEnabled) w.masturbate = 0;
+
+      const total = Object.values(w).reduce((a,b)=>a+b,0);
+      if (total <= 0) return { kiss:0, massage:0, strip:1, bite:0, masturbate:0 };
+      const out = {};
+      for (const k of Object.keys(w)) out[k] = w[k] / total;
+      return out;
+    }
+
+    function averageBalanceMultiplier() {
+      if (!advPending.balanceClothes) return 1.0;
+      const herCnt = countByCategory(herInv).total;
+      const youCnt = countByCategory(youInv).total;
+      const diff = youCnt - herCnt;
+      if (Math.abs(diff) > (advPending.balanceMaxDiff ?? 2)) {
+        return 1.125;
+      }
+      return 1.0;
+    }
+
+    function estimateMovesForPace(paceKey) {
+      const totalItems = countByCategory(herInv).total + countByCategory(youInv).total;
+      if (totalItems <= 0) return 0;
+      if (!includeStrip) return "—";
+
+      const base = getNormalizedWeightsFromPending();
+
+      const othersSumIfNoStrip = (base.kiss||0)+(base.massage||0)+(base.bite||0)+(base.masturbate||0);
+      if (othersSumIfNoStrip === 0) {
+        return totalItems;
+      }
+
+      const paceMap = { superfast: 2.25, fast: 1.5, normal: 1.0, slow: 0.7 };
+      const paceMult = paceMap[paceKey] ?? 1.0;
+      const balanceAvg = averageBalanceMultiplier();
+
+      const w_strip_eff = (base.strip||0) * paceMult * balanceAvg;
+      const w_others = othersSumIfNoStrip;
+
+      const pStrip = w_strip_eff / (w_strip_eff + w_others);
+      const pSafe = Math.max(0.0001, Math.min(0.9999, pStrip));
+
+      const moves = totalItems / pSafe;
+
+      return Math.round(moves);
+    }
+
+    const movesForecast = useMemo(()=>{
+      return {
+        superfast: estimateMovesForPace('superfast'),
+        fast:      estimateMovesForPace('fast'),
+        normal:    estimateMovesForPace('normal'),
+        slow:      estimateMovesForPace('slow'),
+      };
+    }, [
+      herInv, youInv,
+      includeStrip, includeKiss, includeMassage, includeBite, includeMasturbate,
+      advPending.actionWeights, advPending.balanceClothes, advPending.balanceMaxDiff
+    ]);
+
+    // ---------- UI Components ----------
+    function ClothesEditorByCategory({ title, inv, setInv }) {
+      function Row(k) {
+        return (
+          <div key={k} className="flex items-center justify-between gap-1 bg-slate-900/70 border border-slate-800 rounded-lg p-2 text-sm">
+            <div className="opacity-90 leading-tight">{CLOTHES_LABELS[k]}</div>
+            <div className="flex items-center">
+              <button className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded-l border border-slate-700 text-xs" 
+                onClick={()=>setInv(prev=>({...prev, [k]: Math.max(0, (prev[k]||0)-1)}))}>-</button>
+              <div className="px-2 py-0.5 bg-slate-900 border-t border-b border-slate-700 text-center min-w-[1.5rem] font-mono">{inv[k]||0}</div>
+              <button className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded-r border border-slate-700 text-xs"
+                onClick={()=>setInv(prev=>({...prev, [k]: Math.min(4, (prev[k]||0)+1)}))}>+</button>
+            </div>
+          </div>
+        );
+      }
+      return (
+        <div className="card p-4">
+          <h3 className="text-lg font-semibold">{title}</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+            <div className="space-y-2">
+              <div className="font-semibold text-xs text-sky-400 uppercase tracking-wider mb-1">Head</div>
+              {CATEGORIES.head.map(Row)}
+            </div>
+            <div className="space-y-2">
+              <div className="font-semibold text-xs text-sky-400 uppercase tracking-wider mb-1">Upper</div>
+              {CATEGORIES.upper.map(Row)}
+            </div>
+            <div className="space-y-2">
+              <div className="font-semibold text-xs text-sky-400 uppercase tracking-wider mb-1">Lower</div>
+              {CATEGORIES.lower.map(Row)}
+            </div>
+            <div className="space-y-2">
+              <div className="font-semibold text-xs text-sky-400 uppercase tracking-wider mb-1">Feet</div>
+              {CATEGORIES.feet.map(Row)}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    function Help({text}) { return <span className="help" title={text}>?</span>; }
+    
+    function Badge({children}) { return <span className="chip">{children}</span>; }
+    function Section({title, children, right}) {
+      return (
+        <div className="card p-4 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold">{title}</h3>
+            <div>{right}</div>
+          </div>
+          {children}
+        </div>
+      );
+    }
+    
+    function AdvancedBlock() {
+      const ap = advPending;
+
+      const totalItemsLeft = countByCategory(herInv).total + countByCategory(youInv).total;
+
+      return (
+        <div className="card p-4">
+          <h2 className="text-lg font-semibold">Pace settings</h2>
+
+          <div className="mt-3 grid md:grid-cols-2 gap-4 text-sm">
+            <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-3">
+              <div className="font-semibold mb-2">
+                Pace / session length
+                <Help text="Controls how aggressively stripping is encouraged. Changes apply immediately."/>
+              </div>
+              <div className="flex flex-wrap gap-3 items-center">
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="pace" className="accent-sky-500" checked={ap.pace==="superfast"} onChange={()=>markAdvChanged({pace:"superfast"})}/> Super Fast
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="pace" className="accent-sky-500" checked={ap.pace==="fast"} onChange={()=>markAdvChanged({pace:"fast"})}/> Fast
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="pace" className="accent-sky-500" checked={ap.pace==="normal"} onChange={()=>markAdvChanged({pace:"normal"})}/> Medium
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="pace" className="accent-sky-500" checked={ap.pace==="slow"} onChange={()=>markAdvChanged({pace:"slow"})}/> Slow
+                </label>
+              </div>
+
+              <div className="mt-3 rounded-lg bg-slate-950/50 border border-slate-800 p-3">
+                <div className="font-semibold mb-1">Forecast (steps to naked)</div>
+                <div className="text-xs opacity-70 mb-2">Based on current clothes ({totalItemsLeft} items) and enabled Outcomes.</div>
+                <div className="flex flex-wrap gap-2">
+                  <span className="chip">Super Fast: ~{movesForecast.superfast}</span>
+                  <span className="chip">Fast: ~{movesForecast.fast}</span>
+                  <span className="chip">Medium: ~{movesForecast.normal}</span>
+                  <span className="chip">Slow: ~{movesForecast.slow}</span>
+                </div>
+                {(!includeStrip) && <div className="text-xs text-rose-300 mt-2">Enable Strip to make progress.</div>}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ZonesEditor({ title, ZSET, groups, subs }) {
+      return (
+        <div className="card p-4">
+          <h2 className="text-lg font-semibold">{title}</h2>
+          <div className="grid md:grid-cols-3 gap-4 mt-3 text-sm">
+            {["soft","warm","spicy"].map(g=>(
+              <div key={g} className="rounded-xl bg-slate-900/60 border border-slate-800 p-3">
+                <label className="flex items-center justify-between">
+                  <span className="font-semibold capitalize">{g}</span>
+                  <input type="checkbox" className="accent-sky-500" checked={groups[g]} onChange={(e)=>{
+                    const on = e.target.checked;
+                    if (title.startsWith("Kisses")) {
+                      setGroupsK(prev=>({...prev,[g]:on}));
+                      setSubsK(prev=>{ const next={...prev}; for(const z of KISS_ZONES[g]) next[z.key]=on; return next;});
+                    } else {
+                      setGroupsM(prev=>({...prev,[g]:on}));
+                      setSubsM(prev=>{ const next={...prev}; for(const z of MASSAGE_ZONES[g]) next[z.key]=on; return next;});
+                    }
+                  }}/>
+                </label>
+                <div className="grid gap-2 mt-2">
+                  {ZSET[g].map(z=>(
+                    <label key={z.key} className="flex items-center justify-between gap-2">
+                      <span>{z.label}</span>
+                      <input type="checkbox" className="accent-sky-500"
+                        checked={!!subs[z.key]}
+                        onChange={(e)=>{
+                          const on = e.target.checked;
+                          if (title.startsWith("Kisses")) {
+                            setSubsK(prev=>{ const next={...prev,[z.key]:on}; const all=ZSET[g].map(Z=>Z.key); const any=all.some(k=>next[k]); setGroupsK(prevG=>({...prevG,[g]:any})); return next;});
+                          } else {
+                            setSubsM(prev=>{ const next={...prev,[z.key]:on}; const all=ZSET[g].map(Z=>Z.key); const any=all.some(k=>next[k]); setGroupsM(prevG=>({...prevG,[g]:any})); return next;});
+                          }
+                        }}/>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ==== CHAPTER 14: RENDER TRAINING CARD (MANUAL TIMER) BEGIN ====
+    function renderTrainingCard() {
+      const item = trainItem;
+      if (!item) return <div className="k opacity-80">Loading...</div>;
+
+      const blanks = item.blanks || 1;
+      const ready = blanks===1 ? !!selA : (!!selA && !!selB);
+      const cheat = CHEATS[currentQuestionMode];
+      const title = MODE_TITLES[currentQuestionMode] || "Treino";
+
+      const herCounts = countByCategory(herInv);
+      const youCounts = countByCategory(youInv);
+      const currCorrect = round===1 ? success1 : success2;
+      const currWrong   = round===1 ? fail1    : fail2;
+      const hasSubmitted = (submitState === "correct" || submitState === "wrong");
+
+      const paceLabel = { superfast: "SF", fast: "F", normal: "M", slow: "S" };
+      const selectedPaceMoves = movesForecast[advEff.pace] ?? movesForecast.normal;
+
+      const submitCls =
+        submitState==="correct" ? "btn btn-success" :
+        submitState==="lockedCorrect" ? "btn btn-success opacity-70" :
+        submitState==="wrong"   ? "btn btn-danger"  :
+        submitState==="ready"   ? "btn btn-primary" : "btn";
+      const submitText =
+        submitState==="correct" ? "Correct ✓" :
+        submitState==="lockedCorrect" ? "Found it! ✓" :
+        submitState==="wrong"   ? "Wrong ✗" :
+        "Submit";
+
+      const totalItemsLeft = herCounts.total + youCounts.total;
+
+      const handleGamePointerUp = (e) => {
+        const el = e.target.closest('button,select');
+        if (!el) return;
+        if (el.tagName === 'BUTTON') {
+          if (el.disabled || el.getAttribute('aria-disabled') === 'true') return;
+          resumeElapsedIfPaused();
+        } else if (el.tagName === 'SELECT') {
+          setTimeout(() => resumeElapsedIfPaused(), 0);
+        }
+      };
+      
+      const isGrid = (item.a1.length > 4);
+
+      return (
+        <div className="grid gap-3" onPointerUp={handleGamePointerUp}>
+
+          {/* Header card - same as GamePage */}
+          <div className="card p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="k">Q#{questionNo} · Round {round}{finishMode? " (finish)":""}{sexMode? " · Sex mode":""}</div>
+              <div className="k">Correct: <span className="text-emerald-400 font-semibold">{currCorrect}</span> · Wrong: <span className="text-rose-400 font-semibold">{currWrong}</span></div>
+              <div className="flex gap-2">
+                <button
+                  className="btn py-1 px-2"
+                  onClick={()=> setShowCheat(s=>!s)}
+                  title="Open cheat sheet"
+                >
+                  {showCheat?"Hide":"Cheat"}
+                </button>
+                <button className="btn btn-danger py-1 px-2" onClick={()=>setShowRestart(true)}>Restart</button>
+              </div>
+            </div>
+
+            {/* Mini progress forecast */}
+            <div className="mt-2 text-[11px] opacity-80">
+              To both naked (left {totalItemsLeft} items):
+              <span className="ml-2 chip">
+                {paceLabel[advEff.pace] || advEff.pace} ~{selectedPaceMoves}
+              </span>
+              {!includeStrip && <span className="ml-2 text-rose-300">Enable Strip to make progress</span>}
+            </div>
+
+            {/* Clothing stats - same as GamePage */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+              <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-2">
+                <div className="font-semibold mb-1">Göknur</div>
+                <div className="flex flex-wrap gap-1">
+                  <span className="chip">total {herCounts.total}</span>
+                  <span className="chip">head {herCounts.head}</span>
+                  <span className="chip">upper {herCounts.upper}</span>
+                  <span className="chip">lower {herCounts.lower}</span>
+                  <span className="chip">feet {herCounts.feet}</span>
+                  <span className="chip">removed {removedHer}</span>
+                </div>
+              </div>
+              <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-2">
+                <div className="font-semibold mb-1">Eugene</div>
+                <div className="flex flex-wrap gap-1">
+                  <span className="chip">total {youCounts.total}</span>
+                  <span className="chip">head {youCounts.head}</span>
+                  <span className="chip">upper {youCounts.upper}</span>
+                  <span className="chip">lower {youCounts.lower}</span>
+                  <span className="chip">feet {youCounts.feet}</span>
+                  <span className="chip">removed {removedYou}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Play zone */}
+          <div className={`card p-3 play-card ${nextFlash ? "flash" : ""}`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs opacity-80">Mode: <span className="text-slate-200 font-semibold">{title}</span></div>
+              <Badge>PT → EN/TR</Badge>
+            </div>
+
+            {/* Prompt */}
+            <div className="text-xl font-semibold mb-3 text-emerald-300">{item.prompt}</div>
+
+            {/* Locked question indicator */}
+            {questionLocked && submitState === "wrong" && (
+              <div className="mb-3 p-2 rounded-lg bg-rose-900/30 border border-rose-700 text-rose-300 text-sm">
+                ❌ Wrong answer - question locked. Select the correct answer to learn it, or click "Next question".
+              </div>
+            )}
+
+            {/* Blank 1 options */}
+            <div className="mb-3">
+              <div className="text-sm opacity-80 mb-1">Blank 1:</div>
+              <div className={isGrid ? "grid grid-cols-3 gap-2" : "flex flex-wrap gap-2"}>
+                {item.a1.map(opt => {
+                  const isCorrectOpt = opt === item.c1;
+                  const isSelected = selA === opt;
+                  const isDisabled = questionLocked && (submitState === "correct" || submitState === "lockedCorrect" || !isCorrectOpt);
+                  const btnClass = isSelected 
+                    ? (submitState === "correct" || submitState === "lockedCorrect" ? 'btn-success' : 
+                       (questionLocked && !isCorrectOpt ? 'btn bg-rose-800 border-rose-600 opacity-60' : 'btn-primary'))
+                    : (isDisabled ? 'btn opacity-30 cursor-not-allowed' : 'btn');
+                  return (
+                    <button
+                      key={opt}
+                      disabled={isDisabled}
+                      className={btnClass}
+                      onClick={()=>{ 
+                        if (isDisabled) return;
+                        setSelA(opt); 
+                        if (blanks===1 || selB) setSubmitState("ready"); 
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Blank 2 options (if applicable) */}
+            {blanks===2 && item.a2 && (
+              <div className="mb-3">
+                <div className="text-sm opacity-80 mb-1">Blank 2:</div>
+                <div className="flex flex-wrap gap-2">
+                  {item.a2.map(opt => {
+                    const isCorrectOpt = opt === item.c2;
+                    const isSelected = selB === opt;
+                    const isDisabled = questionLocked && (submitState === "correct" || submitState === "lockedCorrect" || !isCorrectOpt);
+                    const btnClass = isSelected 
+                      ? (submitState === "correct" || submitState === "lockedCorrect" ? 'btn-success' : 
+                         (questionLocked && !isCorrectOpt ? 'btn bg-rose-800 border-rose-600 opacity-60' : 'btn-primary'))
+                      : (isDisabled ? 'btn opacity-30 cursor-not-allowed' : 'btn');
+                    return (
+                      <button
+                        key={opt}
+                        disabled={isDisabled}
+                        className={btnClass}
+                        onClick={()=>{ 
+                          if (isDisabled) return;
+                          setSelB(opt); 
+                          if (selA) setSubmitState("ready"); 
+                        }}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Action buttons row */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                className={submitCls}
+                disabled={!ready}
+                onClick={onSubmit}
+              >
+                {submitText}
+              </button>
+
+              {!sexReadyToFinish ? (
+                <button className={`btn ${canNext ? "btn-primary" : ""}`} disabled={!canNext} onClick={nextSentence}>
+                  Next question
+                </button>
+              ) : (
+                <button className="btn btn-success" onClick={openCumModal}>
+                  Finish her!
+                </button>
+              )}
+
+              {lastOutcomeDur && !timerOpen && !timerId.current && (
+                <button className="btn" disabled={!timerReady} onClick={()=>startTimer(lastOutcomeDur)}>
+                  Start timer ({String(Math.floor(lastOutcomeDur/60)).padStart(2,"0")}:{String(lastOutcomeDur%60).padStart(2,"0")})
+                </button>
+              )}
+
+              <button
+                className="btn"
+                disabled={!hasSubmitted}
+                onClick={()=>{ if (hasSubmitted) setShowAnswer(s=>!s); }}
+                title={hasSubmitted ? "Reveal the correct answer" : "Available after Submit"}
+              >
+                {showAnswer ? "Hide answer" : "Show answer"}
+              </button>
+
+              <button className="btn" onClick={()=> speakPt(item.answer)}>🔊 PT</button>
+            </div>
+
+            {/* Show answer section */}
+            {showAnswer && (
+              <div className="mt-3 p-2 rounded-xl bg-slate-900/60 border border-slate-800">
+                <div className="text-xs opacity-80 mb-1">Correct answer:</div>
+                <div className="text-lg font-semibold text-emerald-300 leading-snug break-words">{item.answer}</div>
+                <div className="mt-2 text-sm">
+                  <div className="opacity-80">EN: <span className="text-slate-200">{item.en}</span></div>
+                  <div className="opacity-80">TR: <span className="text-slate-200">{item.tr}</span></div>
+                </div>
+              </div>
+            )}
+
+            {/* Outcome section */}
+            {lastOutcome && (
+              <div className="mt-3 p-2 rounded-xl bg-slate-900/60 border border-slate-800">
+                <div className="text-xs opacity-80 mb-1">Outcome</div>
+                <div className="text-base leading-snug break-words">{lastOutcome}</div>
+              </div>
+            )}
+          </div>
+
+          {/* Cheat sheet */}
+          {showCheat && cheat && (
+            <div className="card p-3">
+              <div className="font-semibold mb-2">{cheat.title}</div>
+              <ul className="list-disc ml-5 space-y-1">
+                {cheat.rows.map((r,i)=>(
+                  <li key={i} className="k">{r.join(" • ")}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      );
+    }
+    // ==== CHAPTER 14: RENDER TRAINING CARD (MANUAL TIMER) END ====
+
+    function GamePage() {
+      const herCounts = countByCategory(herInv);
+      const youCounts = countByCategory(youInv);
+      const currCorrect = round===1 ? success1 : success2;
+      const currWrong   = round===1 ? fail1    : fail2;
+      const hasSubmitted = (submitState === "correct" || submitState === "wrong" || submitState === "lockedCorrect");
+
+      const paceLabel = { superfast: "SF", fast: "F", normal: "M", slow: "S" };
+      const selectedPaceMoves = movesForecast[advEff.pace] ?? movesForecast.normal;
+
+      const submitCls =
+        submitState==="correct" ? "btn btn-success" :
+        submitState==="lockedCorrect" ? "btn btn-success opacity-70" :
+        submitState==="wrong"   ? "btn btn-danger"  :
+        submitState==="ready"   ? "btn btn-primary" : "btn";
+      const submitText =
+        submitState==="correct" ? "Correct ✓" :
+        submitState==="lockedCorrect" ? "Found it! ✓" :
+        submitState==="wrong"   ? "Wrong ✗" :
+        "Submit";
+
+      const handleGamePointerUp = (e) => {
+        const el = e.target.closest('button,select');
+        if (!el) return;
+        if (el.tagName === 'BUTTON') {
+          if (el.disabled || el.getAttribute('aria-disabled') === 'true') return;
+          resumeElapsedIfPaused();
+        } else if (el.tagName === 'SELECT') {
+          setTimeout(() => resumeElapsedIfPaused(), 0);
+        }
+      };
+      const handleGameChange = (e) => {
+        const t = e.target;
+        if (t && t.tagName === 'SELECT') resumeElapsedIfPaused();
+      };
+
+      const totalItemsLeft = herCounts.total + youCounts.total;
+
+      return (
+        <div className="grid gap-3" onPointerUp={handleGamePointerUp} onChange={handleGameChange}>
+
+          {/* Header of game card */}
+          <div className="card p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="k">Q#{questionNo} · Round {round}{finishMode? " (finish)":""}{sexMode? " · Sex mode":""}</div>
+              <div className="k">Correct: <span className="text-emerald-400 font-semibold">{currCorrect}</span> · Wrong: <span className="text-rose-400 font-semibold">{currWrong}</span></div>
+              <div className="flex gap-2">
+                <button
+                  className="btn py-1 px-2"
+                  disabled={!hasSubmitted}
+                  onClick={()=>{ if (hasSubmitted) setShowCheat(s=>!s); }}
+                  title={hasSubmitted ? "Open cheat sheet" : "Available after Submit"}
+                >
+                  {showCheat?"Hide":"Cheat"}
+                </button>
+                <button className="btn btn-danger py-1 px-2" onClick={()=>setShowRestart(true)}>Restart</button>
+              </div>
+            </div>
+
+            {/* mini-forecast */}
+            <div className="mt-2 text-[11px] opacity-80">
+              To both naked (left {totalItemsLeft} items):
+              <span className="ml-2 chip">
+                {paceLabel[advEff.pace] || advEff.pace} ~{selectedPaceMoves}
+              </span>
+              {!includeStrip && <span className="ml-2 text-rose-300">Enable Strip to make progress</span>}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+              <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-2">
+                <div className="font-semibold mb-1">Göknur</div>
+                <div className="flex flex-wrap gap-1">
+                  <span className="chip">total {herCounts.total}</span>
+                  <span className="chip">head {herCounts.head}</span>
+                  <span className="chip">upper {herCounts.upper}</span>
+                  <span className="chip">lower {herCounts.lower}</span>
+                  <span className="chip">feet {herCounts.feet}</span>
+                  <span className="chip">removed {removedHer}</span>
+                </div>
+              </div>
+              <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-2">
+                <div className="font-semibold mb-1">Eugene</div>
+                <div className="flex flex-wrap gap-1">
+                  <span className="chip">total {youCounts.total}</span>
+                  <span className="chip">head {youCounts.head}</span>
+                  <span className="chip">upper {youCounts.upper}</span>
+                  <span className="chip">lower {youCounts.lower}</span>
+                  <span className="chip">feet {youCounts.feet}</span>
+                  <span className="chip">removed {removedYou}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Play zone */}
+          <div className={`card p-3 play-card ${nextFlash ? "flash" : ""}`}>
+            <div className="text-xs opacity-80 mb-1">Prompt (choose correct form & preposition):</div>
+
+            {/* Locked question indicator */}
+            {questionLocked && submitState === "wrong" && (
+              <div className="mb-3 p-2 rounded-lg bg-rose-900/30 border border-rose-700 text-rose-300 text-sm">
+                ❌ Wrong answer - question locked. Select the correct answer to learn it, or click "Next sentence".
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2 text-base">
+              <span className="px-2 py-1 rounded bg-slate-900/60 border border-slate-800">{person}</span>
+
+              {(() => {
+                const p = PERSONS.find(x => x.label===person);
+                const correctConj = firstVerb.conj[p.idx];
+                const correctPrep = firstVerb.prep;
+                
+                const isFullyLocked = questionLocked && (submitState === "correct" || submitState === "lockedCorrect");
+                const conjDisabledLogic = (opt) => {
+                  if (!questionLocked) return false;
+                  if (isFullyLocked) return true; 
+                  return opt !== correctConj; 
+                };
+                const prepDisabledLogic = (prep) => {
+                  if (!questionLocked) return false;
+                  if (isFullyLocked) return true; 
+                  return prep !== correctPrep; 
+                };
+                return (
+                  <>
+                    <select
+                      className={`play-input ${questionLocked && submitState === "wrong" && selectedConj !== correctConj ? 'border-rose-500 bg-rose-900/30' : ''} ${isFullyLocked ? 'border-emerald-500 bg-emerald-900/30' : ''}`}
+                      value={selectedConj}
+                      disabled={isFullyLocked}
+                      onFocus={()=>pauseAutosave(2000)}
+                      onChange={(e)=>{
+                        if (isFullyLocked) return;
+                        const v = e.target.value;
+                        setSelectedConj(v);
+                        const ready = (v !== "inf" && selectedPrep !== null);
+                        setSubmitState(ready ? "ready" : "idle");
+                      }}
+                    >
+                      <option value="inf" disabled={questionLocked}>{firstVerb.key} (inf.)</option>
+                      {conjShuffled.map(opt => (
+                        <option 
+                          key={opt} 
+                          value={opt}
+                          disabled={conjDisabledLogic(opt)}
+                        >
+                          {opt}{questionLocked && submitState === "wrong" && opt !== correctConj ? ' ✗' : ''}
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      className={`play-input ${questionLocked && submitState === "wrong" && selectedPrep !== correctPrep ? 'border-rose-500 bg-rose-900/30' : ''} ${isFullyLocked ? 'border-emerald-500 bg-emerald-900/30' : ''}`}
+                      value={selectedPrep===null ? "__none__" : selectedPrep}
+                      disabled={isFullyLocked}
+                      onFocus={()=>pauseAutosave(2000)}
+                      onChange={(e)=>{
+                        if (isFullyLocked) return;
+                        const v = e.target.value;
+                        const prep = (v==="__none__" ? null : v);
+                        setSelectedPrep(prep);
+                        const ready = (selectedConj !== "inf" && prep !== null);
+                        setSubmitState(ready ? "ready" : "idle");
+                      }}
+                    >
+                      <option value="__none__" disabled>Select prep…</option>
+                      <option value="" disabled={prepDisabledLogic("")}>[ ]{questionLocked && submitState === "wrong" && "" !== correctPrep ? ' ✗' : ''}</option>
+                      <option value="de" disabled={prepDisabledLogic("de")}>de{questionLocked && submitState === "wrong" && "de" !== correctPrep ? ' ✗' : ''}</option>
+                      <option value="a" disabled={prepDisabledLogic("a")}>a{questionLocked && submitState === "wrong" && "a" !== correctPrep ? ' ✗' : ''}</option>
+                      <option value="em" disabled={prepDisabledLogic("em")}>em{questionLocked && submitState === "wrong" && "em" !== correctPrep ? ' ✗' : ''}</option>
+                    </select>
+                  </>
+                );
+              })()}
+
+              <span className="px-2 py-1 rounded bg-slate-900/60 border border-slate-800">{secondVerb.pt}.</span>
+            </div>
+
+            <div className="mt-2 text-xs opacity-80">
+              First verb: <span className="text-slate-200">{firstVerb.en}</span> · <span className="text-slate-200">{firstVerb.tr}</span>
+            </div>
+            <div className="text-xs opacity-80">
+              Second verb: <span className="text-slate-200">{secondVerb.en}</span> · <span className="text-slate-200">{secondVerb.tr}</span>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                className={submitCls}
+                disabled={submitState!=="ready"}
+                onClick={onSubmit}
+              >
+                {submitText}
+              </button>
+
+              {!sexReadyToFinish ? (
+                <button className={`btn ${canNext ? "btn-primary" : ""}`} disabled={!canNext} onClick={nextSentence}>
+                  Next sentence
+                </button>
+              ) : (
+                <button className="btn btn-success" onClick={openCumModal}>
+                  Finish her!
+                </button>
+              )}
+
+              {lastOutcomeDur && !timerOpen && !timerId.current && (
+                <button className="btn" disabled={!timerReady} onClick={()=>startTimer(lastOutcomeDur)}>
+                  Start timer ({String(Math.floor(lastOutcomeDur/60)).padStart(2,"0")}:{String(lastOutcomeDur%60).padStart(2,"0")})
+                </button>
+              )}
+
+              <button
+                className="btn"
+                disabled={!hasSubmitted}
+                onClick={()=>{ if (hasSubmitted) setShowAnswer(s=>!s); }}
+                title={hasSubmitted ? "Reveal the correct sentence" : "Available after Submit"}
+              >
+                {showAnswer ? "Hide answer" : "Show answer"}
+              </button>
+            </div>
+
+            {showAnswer && (
+              <div className="mt-2 p-2 rounded-xl bg-slate-900/60 border border-slate-800">
+                <div className="text-xs opacity-80 mb-1">Portuguese sentence (presente):</div>
+                <div className="text-lg font-semibold text-emerald-300 leading-snug break-words">{sentence}</div>
+              </div>
+            )}
+
+            {lastOutcome && (
+              <div className="mt-3 p-2 rounded-xl bg-slate-900/60 border border-slate-800">
+                <div className="text-xs opacity-80 mb-1">Outcome</div>
+                <div className="text-base leading-snug break-words">{lastOutcome}</div>
+              </div>
+            )}
+          </div>
+
+          {/* Round controls */}
+          <div className="card p-3">
+            <div className="text-sm font-semibold mb-2">Round controls (manual selection of current prompt)</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+              <div>
+                <label className="opacity-80">Person</label>
+                <select className="mt-1 w-full px-2 py-2 rounded-xl bg-slate-800 border border-slate-700"
+                  value={person}
+                  onFocus={()=>pauseAutosave(2000)}
+                  onChange={(e)=>{
+                    setPerson(e.target.value);
+                    setSelectedConj("inf");
+                    setSelectedPrep(null);
+                    setSubmitState("idle");
+                    setCanNext(false);
+                    setLastOutcome(null);
+                    setLastOutcomeDur(null);
+                    setShowAnswer(false);
+                    setShowCheat(false);
+                    setTimerReady(false);
+                    randomizeConjOptions();
+                  }}
+                >
+                  {personOrder.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="opacity-80">First verb</label>
+                <select className="mt-1 w-full px-2 py-2 rounded-xl bg-slate-800 border border-slate-700"
+                  value={firstVerb.key}
+                  onFocus={()=>pauseAutosave(2000)}
+                  onChange={(e)=>{
+                    const v = firstVerbPoolAll().find(x=>x.key===e.target.value) || firstVerb;
+                    setFirstVerb(v);
+                    setSelectedConj("inf");
+                    setSelectedPrep(null);
+                    setSubmitState("idle");
+                    setCanNext(false);
+                    setLastOutcome(null);
+                    setLastOutcomeDur(null);
+                    setShowAnswer(false);
+                    setShowCheat(false);
+                    setTimerReady(false);
+                    randomizeConjOptions();
+                  }}
+                >
+                  {firstVerbPoolAll().map(v => <option key={v.key} value={v.key}>{v.key}</option>)}
+                </select>
+                <div className="text-[11px] opacity-70 mt-1">{firstVerb.en} · {firstVerb.tr}</div>
+              </div>
+
+              <div>
+                <label className="opacity-80">Second verb</label>
+                <select className="mt-1 w-full px-2 py-2 rounded-xl bg-slate-800 border border-slate-700"
+                  value={secondVerb.pt}
+                  onFocus={()=>pauseAutosave(2000)}
+                  onChange={(e)=>{
+                    const v = secondVerbPoolAll().find(x=>x.pt===e.target.value) || secondVerb;
+                    setSecondVerb(v);
+                    setSelectedConj("inf");
+                    setSelectedPrep(null);
+                    setSubmitState("idle");
+                    setCanNext(false);
+                    setLastOutcome(null);
+                    setLastOutcomeDur(null);
+                    setShowAnswer(false);
+                    setShowCheat(false);
+                    setTimerReady(false);
+                  }}
+                >
+                  {secondVerbPoolAll().map(s => <option key={s.pt} value={s.pt}>{s.pt}</option>)}
+                </select>
+                <div className="text-[11px] opacity-70 mt-1">{secondVerb.en} · {secondVerb.tr}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Cheat */}
+          {hasSubmitted && showCheat && (
+            <div className="card p-3">
+              <div className="text-sm font-semibold mb-2">Cheat sheet (Prepositions)</div>
+              <div className="grid md:grid-cols-2 gap-3 text-sm">
+                <div><div className="opacity-70">de</div><div className="flex flex-wrap gap-2 mt-1">{["gostar","precisar","deixar","acabar","ter","parar"].map(it=> <span key={it} className="chip">{it}</span>)}</div></div>
+                <div><div className="opacity-70">a</div><div className="flex flex-wrap gap-2 mt-1">{["começar","aprender","ajudar","continuar","voltar","estar","ensinar","convidar"].map(it=> <span key={it} className="chip">{it}</span>)}</div></div>
+                <div><div className="opacity-70">em</div><div className="flex flex-wrap gap-2 mt-1">{["pensar"].map(it=> <span key={it} className="chip">{it}</span>)}</div></div>
+                <div><div className="opacity-70">(no prep)</div><div className="flex flex-wrap gap-2 mt-1">{["querer","tentar","decidir","prometer","preferir","conseguir","saber","poder","ir","dever","esperar","evitar","planear","procurar","costumar","experimentar"].map(it=> <span key={it} className="chip">{it}</span>)}</div></div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+
+    function SettingsPage() {
+      return (
+        <div className="grid gap-4">
+          {/* Content Modes - Multi-select checkboxes */}
+          <Section title="Modo de conteúdo (selecione vários)">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="accent-sky-500" checked={enabledModes.prepositions} onChange={e=>setEnabledModes(m=>({...m, prepositions:e.target.checked}))}/>
+                Preposições
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="accent-sky-500" checked={enabledModes.questions} onChange={e=>setEnabledModes(m=>({...m, questions:e.target.checked}))}/>
+                Perguntas
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="accent-sky-500" checked={enabledModes.family} onChange={e=>setEnabledModes(m=>({...m, family:e.target.checked}))}/>
+                Família (isto/isso)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="accent-sky-500" checked={enabledModes.familyTree} onChange={e=>setEnabledModes(m=>({...m, familyTree:e.target.checked}))}/>
+                Family tree
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="accent-sky-500" checked={enabledModes.modals} onChange={e=>setEnabledModes(m=>({...m, modals:e.target.checked}))}/>
+                Have to / Should
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="accent-sky-500" checked={enabledModes.comparatives} onChange={e=>setEnabledModes(m=>({...m, comparatives:e.target.checked}))}/>
+                Comparativos
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="accent-sky-500" checked={enabledModes.demonstratives} onChange={e=>setEnabledModes(m=>({...m, demonstratives:e.target.checked}))}/>
+                Demonstrativos+
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="accent-sky-500" checked={enabledModes.appearance} onChange={e=>setEnabledModes(m=>({...m, appearance:e.target.checked}))}/>
+                Aparência
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="accent-sky-500" checked={enabledModes.presentCont} onChange={e=>setEnabledModes(m=>({...m, presentCont:e.target.checked}))}/>
+                Presente contínuo
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="accent-sky-500" checked={enabledModes.bomBem} onChange={e=>setEnabledModes(m=>({...m, bomBem:e.target.checked}))}/>
+                Bom vs Bem
+              </label>
+            </div>
+            <div className="mt-2 text-xs opacity-70">
+              Enabled: {Object.entries(enabledModes).filter(([k,v])=>v).map(([k])=>k).join(', ') || 'none (will default to prepositions)'}
+            </div>
+          </Section>
+
+          {/* Base actions toggles */}
+          <div className="card p-4">
+            <h2 className="text-lg font-semibold">Base actions</h2>
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-sky-500" checked={includeStrip} onChange={e=>setIncludeStrip(e.target.checked)}/> Include Strip</label>
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-sky-500" checked={includeKiss} onChange={e=>setIncludeKiss(e.target.checked)}/> Include Kiss</label>
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-sky-500" checked={includeMassage} onChange={e=>setIncludeMassage(e.target.checked)}/> Include Massage</label>
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-sky-500" checked={includeBite} onChange={e=>setIncludeBite(e.target.checked)}/> Include Bite</label>
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-sky-500" checked={includeMasturbate} onChange={e=>setIncludeMasturbate(e.target.checked)}/> Include Masturbation</label>
+            </div>
+          </div>
+
+          <div className="card p-4">
+            <h2 className="text-lg font-semibold">Mode</h2>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" className="accent-sky-500" checked={sexEnabled} onChange={e=>setSexEnabled(e.target.checked)}/>
+              Enable Sex mode (unlocks after both are naked)
+            </label>
+          </div>
+
+          <ZonesEditor title="Kisses — zones & spice" ZSET={KISS_ZONES} groups={groupsK} subs={subsK} />
+          <ZonesEditor title="Massage — zones & spice" ZSET={MASSAGE_ZONES} groups={groupsM} subs={subsM} />
+
+          <ClothesEditorByCategory title="Clothing — Göknur" inv={herInv} setInv={setHerInv}/>
+          <ClothesEditorByCategory title="Clothing — Eugene" inv={youInv} setInv={setYouInv}/>
+
+          <div className="card p-4">
+            <h2 className="text-lg font-semibold">Clothing presets</h2>
+            <div className="flex flex-wrap gap-2 mt-2">
+              <button className="btn btn-primary" onClick={setDefaultsNow}>Set Default (save current)</button>
+              <button className="btn" onClick={applySavedDefaults}>Default (apply saved)</button>
+              <button className="btn btn-danger" onClick={zeroAll}>Zero (all 0)</button>
+            </div>
+          </div>
+
+          <AdvancedBlock/>
+
+          <div className="flex gap-2">
+            <button className="btn btn-primary" onClick={()=>setPage("game")}>Back to Game</button>
+          </div>
+        </div>
+      );
+    }
+
+    function EndModal() {
+      if (!showEndModal) return null;
+      return (
+        <div className="modal">
+          <div className="max-w-xl w-[95vw] card p-4">
+            <div className="whitespace-pre-line text-sm">{endMessage}</div>
+            <div className="mt-3 flex gap-2 justify-end">
+              <button className="btn" onClick={()=>proceedAfterEnd(false)}>{round===1 ? "No" : "End"}</button>
+              <button className="btn btn-primary" onClick={()=>proceedAfterEnd(true)}>{round===1 ? "Continue" : "Play again"}</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function RestartModal() {
+      if (!showRestart) return null;
+      const herInit = countByCategory(initHerInv);
+      const youInit = countByCategory(initYouInv);
+      const herCur  = countByCategory(herInv);
+      const youCur  = countByCategory(youInv);
+      return (
+        <div className="modal-opaque">
+          <div className="max-w-xl w-[95vw] card p-4">
+            <div className="text-sm font-semibold mb-2">Restart game?</div>
+            <div className="text-sm whitespace-pre-line">{`Round 1 — Correct: ${success1} · Wrong: ${fail1}
+Round 2 — Correct: ${success2} · Wrong: ${fail2}
+Total — Correct: ${success1+success2} · Wrong: ${fail1+fail2}
+
+Göknur:
+${herInit.head-herCur.head}/${herInit.head} head removed
+${herInit.upper-herCur.upper}/${herInit.upper} upper body removed
+${herInit.lower-herCur.lower}/${herInit.lower} lower body removed
+${herInit.feet-herCur.feet}/${herInit.feet} feet removed
+kisses:
+  ${kissGivenHer.soft} soft
+  ${kissGivenHer.warm} warm
+  ${kissGivenHer.spicy} spicy
+massage:
+  ${massGivenHer.soft} soft
+  ${massGivenHer.warm} warm
+  ${massGivenHer.spicy} spicy
+
+Eugene:
+${youInit.head-youCur.head}/${youInit.head} head removed
+${youInit.upper-youCur.upper}/${youInit.upper} upper body removed
+${youInit.lower-youCur.lower}/${youInit.lower} lower body removed
+${youInit.feet-youCur.feet}/${youInit.feet} feet removed
+kisses:
+  ${kissGivenYou.soft} soft
+  ${kissGivenYou.warm} warm
+  ${kissGivenYou.spicy} spicy
+massage:
+  ${massGivenYou.soft} soft
+  ${massGivenYou.warm} warm
+  ${massGivenYou.spicy} spicy`}
+            </div>
+            <div className="mt-3 flex gap-2 justify-end">
+              <button className="btn" onClick={()=>setShowRestart(false)}>No</button>
+              <button className="btn btn-danger" onClick={()=>{ setShowRestart(false); restartGame(true); }}>Yes, restart</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function SexUnlockModal() {
+      if (!showSexUnlock) return null;
+      return (
+        <div className="modal">
+          <div className="max-w-xl w-[95vw] card p-4">
+            <div className="text-base">{sexUnlockMsg}</div>
+            <div className="mt-3 flex gap-2 justify-end">
+              <button className="btn" onClick={()=>{ setShowSexUnlock(false); }}>
+                Not now
+              </button>
+              <button className="btn btn-primary" onClick={()=>{
+                setShowSexUnlock(false);
+                setSexMode(true);
+                setFinishMode(false);
+                setRound(2);
+                setQuestionNo(n=>n+1);
+                setSexPhase('warmup');
+                setSexActsCount(0);
+                setSexReadyToFinish(false);
+                setMasturbatedHerOnce(false);
+                setMasturbatedHimOnce(false);
+                sexUsedVariants.current = new Set();
+                setLastOutcome("(Sex) — Mode started. Warm-up oil applied.");
+                setLastOutcomeDur(120);
+                setTimerReady(true);
+              }}>
+                Continue to Sex
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const [showCumModal, setShowCumModal] = useState(false);
+    function CumModal() {
+      if (!showCumModal) return null;
+      return (
+        <div className="modal">
+          <div className="max-w-xl w-[95vw] card p-4">
+            <div className="text-lg font-semibold mb-2">Final sex in {cumFinalPos || "doggy style"} for 5 minutes — both have to cum!</div>
+            <div className="text-base">When you are ready, press Start to begin the 5-minute timer. The last 20 seconds will be counted down aloud (English).</div>
+            <div className="mt-3 flex gap-2 justify-end">
+              <button className="btn" onClick={closeCumModal}>Back</button>
+              <button className="btn btn-primary" onClick={()=>{
+                closeCumModal();
+                startFinalSexTimer(cumFinalPos || "doggy style");
+              }}>Start</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function TimerOverlay() {
+      if (!timerOpen) return null;
+      const mm = String(Math.floor(timerLeft/60)).padStart(2,"0");
+      const ss = String(timerLeft%60).padStart(2,"0");
+      return (
+        <div className="timer-overlay" onClick={cancelTimerSilently}>
+          <div className="timer-circle" onClick={(e)=>e.stopPropagation()}>
+            <div className="timer-digits">{mm}:{ss}</div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen w-full p-3 md:p-8">
+        <div className="max-w-5xl mx-auto grid gap-3">
+          <header className="flex items-center justify-between">
+            <h1 className="text-xl md:text-3xl font-bold tracking-tight">Portuguese Preposition Play — Couples Game</h1>
+
+            <Stopwatch
+              ref={stopwatchRef}
+              onPauseChange={(paused)=>setElapsedUserPaused(paused)}
+            />
+
+            <nav className="flex gap-2">
+              <button
+                className={`btn ${page==="game" ? "btn-primary" : ""}`}
+                onClick={()=>setPage("game")}
+                aria-pressed={page==="game"}
+              >
+                Game
+              </button>
+              <button
+                className={`btn ${page==="settings" ? "btn-primary" : ""}`}
+                onClick={()=>setPage("settings")}
+                aria-pressed={page==="settings"}
+              >
+                Settings
+              </button>
+            </nav>
+          </header>
+
+          {page==="game" ? (currentQuestionMode==="prepositions" ? <GamePage/> : renderTrainingCard()) : <SettingsPage/>}
+
+          <EndModal/>
+          <RestartModal/>
+          <SexUnlockModal/>
+          <CumModal/>
+          <TimerOverlay/>
+
+          <footer className="text-[11px] opacity-70 leading-relaxed">
+            <p>Consent: play only if both of you are enthusiastically consenting adults. Adjust actions in Settings.</p>
+            <p className="mt-1">Flow: choose the correct verb form and preposition, then Submit. You'll get an Outcome and can proceed with "Next sentence".</p>
+            {!sexEnabled && round===2 && finishMode && countByCategory(herInv).total===0 && countByCategory(youInv).total===0 && (
+              <p className="mt-1">Congratulations! You are both naked! Now wear your clothes back please, it is getting cold 🥶</p>
+            )}
+          </footer>
+        </div>
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+})();
+  </script>
+</body>
+</html>
